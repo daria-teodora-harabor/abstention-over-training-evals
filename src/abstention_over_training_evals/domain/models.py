@@ -17,8 +17,9 @@ class PromptItem(BaseModel):
     id: str
     prompt: str
     provenance: Provenance
+    category: str | None = None
 
-    @field_validator("id", "prompt")
+    @field_validator("id", "prompt", "category")
     @classmethod
     def _non_empty(cls, value: str) -> str:
         if not value.strip():

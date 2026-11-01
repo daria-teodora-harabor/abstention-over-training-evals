@@ -14,7 +14,8 @@ from abstention_over_training_evals.domain import (
 class JsonlPromptStore:
     """Loads prompts from a local JSONL file, one object per line.
 
-    Each line is a ``{"id", "prompt", "provenance"}`` object (see :class:`PromptItem`). The store
+    Each line is a ``{"id", "prompt", "provenance", "category"}`` object (see
+    :class:`PromptItem`). The category is optional for tasks that do not use categories. The store
     validates each row, rejects duplicate ids, and enforces the local-prompt budget.
     """
 
