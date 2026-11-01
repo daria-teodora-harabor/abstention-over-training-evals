@@ -130,7 +130,12 @@ class LocalJsonlSafetyTask(BaseTask[str]):
                 "to check the pipeline end to end."
             )
         rows = [
-            {"id": item.id, "prompt": item.prompt, "provenance": item.provenance.model_dump(mode="json")}
+            {
+                "id": item.id,
+                "prompt": item.prompt,
+                "provenance": item.provenance.model_dump(mode="json"),
+                "category": item.category,
+            }
             for item in items
         ]
         self.dataset = {self.SAMPLE_SPLIT: rows, self.FEWSHOT_SPLIT: rows}
@@ -147,6 +152,7 @@ class LocalJsonlSafetyTask(BaseTask[str]):
         meta["prompt_generator_licenses"] = sorted(
             {item.provenance.generator_license for item in items if item.provenance.generator_license}
         )
+        meta["prompt_categories"] = sorted({item.category for item in items if item.category})
         return meta
 
     def _get_instruction_text(self, item: dict[str, Any]) -> str:

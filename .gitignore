@@ -222,7 +222,3 @@ __marimo__/
 # abstention-over-training-evals
 .import_linter_cache/
 outputs/
-
-script.bash
-judge_saved.py
-judged/
