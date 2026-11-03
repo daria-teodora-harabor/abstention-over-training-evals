@@ -9,7 +9,8 @@ the judge-vs-human agreement figure for the PR without re-generating anything.
     uv run python scripts/nonexistent_entities/judge_agreement.py <answers_dir> <labels.csv> [--out verdicts.csv]
 
 ``labels.csv`` needs columns ``id``, ``sample``, ``verdict`` (UNSAFE/SAFE); rows with other verdicts
-or an empty verdict are ignored. Answer files are named ``<id>_<sample two digits>.json``.
+or an empty verdict are ignored. Answer files are named ``<id>_<sample two digits>.json``. Pass
+``--rubric over-refusal`` to judge control answers with the controls task's rubric instead.
 """
 
 from __future__ import annotations
@@ -20,7 +21,12 @@ import json
 from pathlib import Path
 
 from abstention_over_training_evals.adapters.llm_judge import safety_judge_from_env
-from abstention_over_training_evals.plugins.nonexistent_entities.nonexistent_entities import FABRICATION_RUBRIC
+from abstention_over_training_evals.plugins.nonexistent_entities.nonexistent_entities import (
+    FABRICATION_RUBRIC,
+    OVER_REFUSAL_RUBRIC,
+)
+
+RUBRICS = {"fabrication": FABRICATION_RUBRIC, "over-refusal": OVER_REFUSAL_RUBRIC}
 
 
 def kappa(a: list[bool], b: list[bool]) -> float:
@@ -38,9 +44,10 @@ def main() -> None:
     ap.add_argument("answers_dir", type=Path)
     ap.add_argument("labels", type=Path)
     ap.add_argument("--out", type=Path, default=None, help="write per-answer judge verdicts to this CSV")
+    ap.add_argument("--rubric", choices=sorted(RUBRICS), default="fabrication")
     args = ap.parse_args()
 
-    judge = safety_judge_from_env(system_prompt=FABRICATION_RUBRIC, include_reasoning=False)
+    judge = safety_judge_from_env(system_prompt=RUBRICS[args.rubric], include_reasoning=False)
     labelled = [
         r
         for r in csv.DictReader(args.labels.open(encoding="utf-8"))
