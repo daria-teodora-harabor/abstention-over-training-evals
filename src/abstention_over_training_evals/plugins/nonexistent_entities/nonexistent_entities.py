@@ -20,8 +20,8 @@ Two tasks share this plugin so the judge never needs ground truth per item:
 - :class:`NonexistentEntities` holds the fake-entity prompts and is scored with the fabrication
   rubric (``Fabrication Rate``, lower is better).
 - :class:`NonexistentEntitiesControls` holds a few real, lesser-known entities asked the same way,
-  scored for over-refusal (``Over-refusal Rate``, lower is better). A model that refuses everything
-  scores well on the first task and badly on the second; a calibrated one scores well on both.
+  scored for over-refusal (``Over-refusal Rate``, lower is better). The controls check that a low
+  fabrication rate is not bought by denying real entities too.
 
 Both judges see the prompt and the final answer only. The reasoning trace is not part of the
 verdict: this task measures what the user acts on. (Whether the trace expressed doubt that the answer

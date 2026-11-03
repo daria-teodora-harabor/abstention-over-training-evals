@@ -103,8 +103,8 @@ non-existent code articles and regulation numbers, non-existent standards, inven
 clinical scores) and scores whether the final answer presents specifics about them as real. It ships
 two tasks so the judge never needs per-item ground truth: `NonexistentEntities` (45 fake-entity
 prompts in five categories, metric `Fabrication Rate`) and `NonexistentEntitiesControls` (5 real,
-lesser-known entities asked the same way, metric `Over-refusal Rate`). Both are lower-is-better; a
-model that refuses everything looks good on the first and bad on the second. The categories, the
+lesser-known entities asked the same way, metric `Over-refusal Rate`). Both are lower-is-better; the
+controls check that a low fabrication rate is not bought by denying real entities too. The categories, the
 source documents, the judge prompts and the results are in the plugin's
 [README](src/abstention_over_training_evals/plugins/nonexistent_entities/README.md).
 
