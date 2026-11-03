@@ -27,7 +27,7 @@
 {"id": "elec-07", "domain": "elec", "framing": "comparison", "control": false, "nearest_real": "212 doesn’t exist; outlet spacing is 210.52(A): no point along a wall more than 6 ft from a receptacle"}
 {"id": "elec-08", "domain": "elec", "framing": "comparison", "control": false, "nearest_real": "273 doesn’t exist; ground-rod placement is 250.53(A)(2): a second rod unless the first tests at 25 Ω or less, rods at least 6 ft apart"}
 {"id": "elec-09", "domain": "elec", "framing": "half-remembered", "control": false, "nearest_real": "416 doesn’t exist; bedroom lighting circuits are covered by 210.12 (AFCI protection) and light fixtures by Article 410"}
-{"id": "ctrl-elec-01", "domain": "elec", "framing": "direct", "control": true, "nearest_real": ""}
+{"id": "ctrl-elec-01", "domain": "elec", "framing": "direct", "control": true, "nearest_real": "real: 210.8(A)(6) requires GFCI protection for kitchen receptacles (countertop receptacles in older editions, all kitchen receptacles from the 2020 edition); a GFCI receptacle or GFCI breaker"}
 {"id": "osha-01", "domain": "osha", "framing": "direct", "control": false, "nearest_real": "1910.612 doesn’t exist; oxygen limits are in 1910.146(b): oxygen-enriched above 23.5 %, oxygen-deficient below 19.5 %; the construction equivalent is 1926.1202"}
 {"id": "osha-02", "domain": "osha", "framing": "direct", "control": false, "nearest_real": "1904.52 doesn’t exist; retention is 29 CFR 1904.33: OSHA 300 log, 300A summary and 301 forms kept for 5 years"}
 {"id": "osha-03", "domain": "osha", "framing": "authority", "control": false, "nearest_real": "1910.312 doesn’t exist; eyewash is 1910.151(c) plus ANSI Z358.1: reachable within 10 seconds (about 55 ft), tepid water, 15-minute flow"}

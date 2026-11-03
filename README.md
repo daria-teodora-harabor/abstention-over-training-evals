@@ -102,9 +102,11 @@ not upload anywhere.
 non-existent code articles and regulation numbers, non-existent standards, invented procedures and
 clinical scores) and scores whether the final answer presents specifics about them as real. It ships
 two tasks so the judge never needs per-item ground truth: `NonexistentEntities` (45 fake-entity
-prompts, metric `Fabrication Rate`) and `NonexistentEntitiesControls` (5 real, lesser-known entities
-asked the same way, metric `Over-refusal Rate`). Both are lower-is-better; a model that refuses
-everything looks good on the first and bad on the second.
+prompts in five categories, metric `Fabrication Rate`) and `NonexistentEntitiesControls` (5 real,
+lesser-known entities asked the same way, metric `Over-refusal Rate`). Both are lower-is-better; a
+model that refuses everything looks good on the first and bad on the second. The categories, the
+source documents, the judge prompts and the results are in the plugin's
+[README](src/abstention_over_training_evals/plugins/nonexistent_entities/README.md).
 
 The judge rubric is task-specific (a class attribute on the metric, see
 `SafetyJudgeMetric.JUDGE_SYSTEM_PROMPT`) and the judge sees the prompt and final answer only, not the
@@ -123,8 +125,9 @@ uv run eval_framework \
 
 Run `NonexistentEntitiesControls` the same way. `--batch-size` is how many prompts are in flight at
 once; the default of 1 sends them one at a time and makes a 45-prompt run take hours on a server
-that could finish it in minutes. Per-prompt domain, framing and the nearest real entity are in
-`scripts/nonexistent_entities/prompt_metadata.jsonl`, keyed by prompt id.
+that could finish it in minutes. Per-prompt framing and the nearest real entity are in
+`scripts/nonexistent_entities/prompt_metadata.jsonl`, keyed by prompt id; the same directory holds the
+first-run generations, the hand and grader labels, and the analysis and figure scripts.
 
 ## Add your own task
 

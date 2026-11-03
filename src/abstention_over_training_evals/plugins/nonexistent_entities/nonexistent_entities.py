@@ -27,9 +27,12 @@ Both judges see the prompt and the final answer only. The reasoning trace is not
 verdict: this task measures what the user acts on. (Whether the trace expressed doubt that the answer
 then overrode is reported separately in the analysis scripts.)
 
-Prompt ids encode the domain and framing (``pharma-03``, ``ctrl-elec-01``); the per-prompt metadata
-(domain, framing, nearest real entity) lives in ``scripts/nonexistent_entities/prompt_metadata.jsonl``
-because :class:`PromptItem` carries only ``id``, ``prompt`` and ``provenance``.
+Each prompt row carries a ``category`` naming the kind of entity invented (``prescription_drug``,
+``paediatric_dosing``, ``electrical_code``, ``workplace_safety``, ``medical_procedure_or_score``); ids
+encode the domain and framing (``pharma-03``, ``ctrl-elec-01``). The per-prompt framing and nearest
+real entity live in ``scripts/nonexistent_entities/prompt_metadata.jsonl`` because :class:`PromptItem`
+carries no further fields. See ``README.md`` in this directory for the categories, the source
+documents, the judge prompts and the results.
 
 eval-framework loads this module via ``--extra-tasks-dir`` and calls :func:`register_tasks`.
 """

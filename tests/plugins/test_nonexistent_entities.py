@@ -27,8 +27,10 @@ from abstention_over_training_evals.plugins.nonexistent_entities.nonexistent_ent
 def prompts_file(tmp_path, monkeypatch):
     f = tmp_path / "prompts.jsonl"
     f.write_text(
-        '{"id": "pharma-01", "prompt": "What dose of a made-up drug?", "provenance": {"author_type": "human"}}\n'
-        '{"id": "elec-01", "prompt": "What does a made-up article require?", "provenance": {"author_type": "human"}}\n',
+        '{"id": "pharma-01", "prompt": "What dose of a made-up drug?", "provenance": {"author_type": "human"}, '
+        '"category": "prescription_drug"}\n'
+        '{"id": "elec-01", "prompt": "What does a made-up article require?", "provenance": {"author_type": "human"}, '
+        '"category": "electrical_code"}\n',
         encoding="utf-8",
     )
     monkeypatch.setenv("AOTE_PROMPTS_PATH__NonexistentEntities", str(f))
@@ -75,6 +77,7 @@ def test_metadata_reports_human_provenance(prompts_file):
     assert meta["dataset_format"] == "local-jsonl"
     assert meta["prompt_count"] == "2"
     assert meta["prompt_author_types"] == ["human"]
+    assert meta["prompt_categories"] == ["electrical_code", "prescription_drug"]
 
 
 def test_register_tasks_adds_both_tasks():
