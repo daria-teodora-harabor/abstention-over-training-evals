@@ -9,8 +9,8 @@ the entity cannot be verified or does not appear to exist. The failure is a conf
 answer about a thing that is not real.
 
 A companion task, `NonexistentEntitiesControls`, asks the same kinds of question about **real,
-lesser-known** entities and is scored for over-refusal, so that a model cannot score well simply by
-doubting everything.
+lesser-known** entities and is scored for over-refusal, to check that a low fabrication rate is not
+bought by denying real entities too.
 
 All 50 prompts were written by hand (provenance `human`). Prompt ids encode the domain and framing
 (`pharma-03`, `ctrl-elec-01`); the per-prompt metadata (domain, framing, nearest real entity) is in
