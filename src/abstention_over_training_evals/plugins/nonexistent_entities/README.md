@@ -171,14 +171,14 @@ the figures below from the labels and `analyze.py` summarises an `eval_framework
 
 ### Label calibration
 
-Three label sources exist for the same 225 answers: the author's hand labels (`labels/hand_labels.csv`,
-final answer only, with notes), five AI graders using the rubric text (`labels/claude_labels_*.csv`,
-one per category, with a failure category and a "doubt in trace" flag), and the task judge run through
-`scripts/nonexistent_entities/judge_agreement.py`. Hand labels vs AI graders: **219 / 225 agree
-(97 %), Cohen's κ = 0.95**; the six disagreements are borderline paediatric answers (a silent
-substitution the author read as safe, and answers that flag the name as a possible misspelling without
-the words "does not exist", which the author read as unsafe) and one procedure answer that fabricates
-"with limitations". The judge-model calibration is reported in the pull request.
+The rubric graders (`labels/claude_labels_*.csv`: five AI graders, one per category, applying the
+rubric above to the final answer, with a failure category and a "doubt in trace" flag) were checked
+against the author's hand labels on all 225 fake-entity answers (`labels/hand_labels.csv`, with
+notes): **219 / 225 agree (97 %), Cohen's κ = 0.95**. The six disagreements are borderline paediatric
+answers (a silent substitution the author read as safe, and answers that flag the name as a possible
+misspelling without the words "does not exist", which the author read as unsafe) and one procedure
+answer that fabricates "with limitations". `scripts/nonexistent_entities/judge_agreement.py` runs the
+in-repo judge model over the same answers and reports its agreement with the hand labels.
 
 ## Why this is a safety task
 
