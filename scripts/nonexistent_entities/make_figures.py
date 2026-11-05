@@ -3,11 +3,10 @@
 
     uv run --with matplotlib python scripts/nonexistent_entities/make_figures.py
 
-Reads ``labels/hand_labels.csv`` (id, sample, verdict) and ``prompt_metadata.jsonl`` and writes three
-PNGs to ``figures/``: fabrication rate per domain (with Wilson 95 % intervals), the distribution of
-per-prompt fabrication counts out of 5 samples, and the rate per framing with the five individual
-sample runs shown as small dots. Pass ``--labels`` to draw the same figures from another label file
-(for example the judge's verdicts).
+Reads ``labels/hand_labels.csv`` (id, sample, verdict) and ``prompt_metadata.jsonl`` and writes two
+PNGs to ``figures/``: fabrication rate per domain (with Wilson 95 % intervals) and the distribution of
+per-prompt fabrication counts out of 5 samples. Pass ``--labels`` to draw the same figures from
+another label file (for example the judge's verdicts).
 """
 
 from __future__ import annotations
@@ -31,14 +30,6 @@ DOMAINS = {
     "proc": "Procedures & scores",
     "osha": "Workplace safety",
     "elec": "Electrical code",
-}
-FRAMINGS = ["direct", "authority", "online", "comparison", "half-remembered"]
-FRAMING_LABELS = {
-    "direct": "direct",
-    "authority": "authority\n(\"my electrician said\")",
-    "online": "online\n(\"a post says\")",
-    "comparison": "comparison\n(fake beside a real one)",
-    "half-remembered": "half-remembered",
 }
 # Fixed categorical order (one hue per domain, never cycled); blue is also the single-series hue.
 COLORS = {"pharma": "#2a78d6", "peds": "#eb6834", "proc": "#1baf7a", "osha": "#eda100", "elec": "#e87ba4"}
@@ -139,32 +130,6 @@ def fig_per_prompt(rows: list[dict[str, object]], out: Path, source: str) -> Non
     plt.close(fig)
 
 
-def fig_framing(rows: list[dict[str, object]], out: Path, source: str) -> None:
-    fig, ax = plt.subplots(figsize=(8, 3.8), dpi=160)
-    for i, fr in enumerate(FRAMINGS):
-        sub = [r for r in rows if r["framing"] == fr]
-        k, n = sum(1 for r in sub if r["unsafe"]), len(sub)
-        lo, hi = wilson(k, n)
-        ax.plot([i, i], [100 * lo, 100 * hi], color="#2a78d6", lw=1.5, zorder=2)
-        ax.plot(i, 100 * k / n, "o", ms=10, color="#2a78d6", mec="white", mew=1.5, zorder=4)
-        for s in range(5):
-            run = [r for r in sub if r["sample"] == s]
-            rk = sum(1 for r in run if r["unsafe"])
-            ax.plot(i + (s - 2) * 0.07, 100 * rk / len(run), "o", ms=4, color=INK2, alpha=0.7, zorder=3)
-        ax.text(i + 0.14, 100 * k / n, f"{k}/{n}", va="center", fontsize=9, color=INK)
-    ax.set_xticks(range(len(FRAMINGS)), [FRAMING_LABELS[f] for f in FRAMINGS], fontsize=8)
-    ax.set_ylim(0, 100)
-    ax.set_ylabel("fabrication rate (%)")
-    ax.set_title(f"Fabrication rate by prompt framing ({source})", fontsize=10, loc="left")
-    ax.text(0.0, 1.02, "large dot = all 5 samples, line = Wilson 95% CI; small dots = each of the 5 sample runs",
-            transform=ax.transAxes, fontsize=8, color=INK2, va="bottom")
-    ax.grid(axis="y", color=GRID, zorder=0)
-    style(ax)
-    fig.tight_layout()
-    fig.savefig(out, facecolor="white")
-    plt.close(fig)
-
-
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--labels", type=Path, default=HERE / "labels" / "hand_labels.csv")
@@ -176,8 +141,7 @@ def main() -> None:
     args.out_dir.mkdir(parents=True, exist_ok=True)
     fig_domain(rows, args.out_dir / f"fig1_rate_by_domain{args.suffix}.png", args.source)
     fig_per_prompt(rows, args.out_dir / f"fig2_per_prompt_counts{args.suffix}.png", args.source)
-    fig_framing(rows, args.out_dir / f"fig3_rate_by_framing{args.suffix}.png", args.source)
-    print(f"{len(rows)} labelled answers; wrote 3 figures to {args.out_dir}")
+    print(f"{len(rows)} labelled answers; wrote 2 figures to {args.out_dir}")
 
 
 if __name__ == "__main__":

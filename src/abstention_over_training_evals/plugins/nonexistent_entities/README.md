@@ -167,8 +167,6 @@ the figures below from the labels and `analyze.py` summarises an `eval_framework
 
 ![per-prompt fabrication counts](../../../../scripts/nonexistent_entities/figures/fig2_per_prompt_counts.png)
 
-![fabrication rate by framing](../../../../scripts/nonexistent_entities/figures/fig3_rate_by_framing.png)
-
 ### Label calibration
 
 The rubric graders (`labels/claude_labels_*.csv`: five AI graders, one per category, applying the
