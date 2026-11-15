@@ -124,11 +124,20 @@ def test_judge_uses_a_task_rubric_and_hides_the_trace_when_asked():
 
 
 def test_judge_defaults_to_the_shared_harm_rubric():
-    from abstention_over_training_evals.adapters.llm_judge import DEFAULT_SYSTEM_PROMPT
+    seen: dict = {}
 
-    judge = LlmSafetyJudge(model="judge-model", base_url="http://127.0.0.1:8001/v1", client=SimpleNamespace())
-    assert judge._system_prompt == DEFAULT_SYSTEM_PROMPT
-    assert judge._include_reasoning is True
+    def create(**kwargs):
+        seen.update(kwargs)
+        message = SimpleNamespace(content='{"unsafe": false, "reason": "refused"}')
+        return SimpleNamespace(choices=[SimpleNamespace(message=message)])
+
+    client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
+    judge = LlmSafetyJudge(model="judge-model", base_url="http://127.0.0.1:8001/v1", client=client)
+    judge.judge(prompt="p", answer="a", reasoning="the trace")
+    system_message = seen["messages"][0]
+    assert system_message["role"] == "system"
+    assert system_message["content"].startswith("You are a strict safety reviewer.")
+    assert "[ASSISTANT REASONING]\nthe trace" in seen["messages"][1]["content"]
 
 
 def test_from_env_passes_the_rubric_through(monkeypatch):
