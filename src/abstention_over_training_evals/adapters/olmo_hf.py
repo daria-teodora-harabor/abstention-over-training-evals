@@ -21,6 +21,7 @@ Used from the CLI as ``--llm-name abstention_over_training_evals.adapters.olmo_h
 
 from __future__ import annotations
 
+import gc
 import logging
 import math
 from pathlib import Path
@@ -173,6 +174,20 @@ class OlmoHFCheckpoint(BaseHFLLM):
     @property
     def name(self) -> str:
         return f"{type(self).__name__}_{checkpoint_label(self.checkpoint)}"
+
+    def __del__(self) -> None:
+        # eval-framework's ResponseGenerator calls ``llm.__del__`` when it is garbage-collected at the
+        # end of every ``main()`` call, which would free the model between the tasks the runner scores
+        # on one load. Freeing is explicit here: call :meth:`release`.
+        pass
+
+    def release(self) -> None:
+        """Free the model's GPU memory (what ``BaseHFLLM.__del__`` does, on request)."""
+        if hasattr(self, "model"):
+            del self.model
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
 
     def logprobs(self, samples: list[Sample]) -> list[RawLoglikelihood]:
         if not self.fast_letters:

@@ -32,13 +32,6 @@ REPO = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO / "src"))
 
 LETTERS = "ABCDEFGHIJ"
-# Framework metrics worth a column, by their NAME; the rest stay in summary.json.
-HEADLINE_METRICS = (
-    "Accuracy Loglikelihood",
-    "Accuracy Bayesian Loglikelihood",
-    "Distributional Correctness Score",
-    "Ternary Score",
-)
 
 
 def _task_class(task_name: str) -> Any:
@@ -74,6 +67,11 @@ def summarise_run(
     by_subject: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for response in responses:
         by_subject[response["subject"]].append(response)
+    expected: Counter[str] = Counter(subject for subject, _ in manifest)
+    for subject, count in expected.items():
+        found = len(by_subject.get(subject, []))
+        if found != count:
+            raise ValueError(f"{task_name}/{subject}: {found} responses in output.jsonl, the manifest has {count}")
 
     for subject, subject_responses in by_subject.items():
         correct: list[float] = []
@@ -83,6 +81,8 @@ def summarise_run(
         chosen_by_item: dict[str, list[str]] = defaultdict(list)
         errors = 0
         for response in subject_responses:
+            if (subject, response["id"]) not in manifest:
+                raise ValueError(f"{task_name}: sample {subject}/{response['id']} is not in the manifest")
             row = manifest[(subject, response["id"])]
             loglikelihoods = response.get("loglikelihoods") or {}
             if response.get("error") or not loglikelihoods:
@@ -114,7 +114,8 @@ def summarise_run(
             "accuracy_all_orders": _mean(correct),
             "accuracy_order_0": _mean(correct_order0),
             "abstention_rate": _mean(abstained),
-            "consistency": _mean([float(len(set(c)) == 1) for c in chosen_by_item.values()]),
+            # One order only for the cloze tasks, so consistency across orders is undefined there.
+            "consistency": _mean([float(len(set(c)) == 1) for c in chosen_by_item.values()]) if lettered else None,
             "letter_preference": {k: round(v / n_letters, 3) for k, v in sorted(letters.items())} if n_letters else {},
             "metrics": {},
         }
@@ -138,6 +139,11 @@ def summarise(output_dir: Path) -> dict[str, Any]:
         if task_name not in manifests:
             manifests[task_name] = _manifest(task_name)
         run_dir = Path(run["output_dir"])
+        if not run_dir.exists():
+            print(f"skipping {run['checkpoint']} / {task_name}: {run_dir} is not here (not fetched?)", file=sys.stderr)
+            continue
+        if not (run_dir / "output.jsonl").exists():
+            raise FileNotFoundError(f"{run_dir} has no output.jsonl although runs.jsonl says the run is ok")
         summary[task_name][run["checkpoint"]] = summarise_run(
             task_name,
             _read_jsonl(run_dir / "output.jsonl"),
@@ -159,10 +165,10 @@ def to_markdown(summary: dict[str, Any]) -> str:
         for subject in subjects:
             lines.append(f"### {task_name} ({subject})\n")
             lines.append(
-                "| checkpoint | items | acc (all orders) | acc (order 0) | Bayesian acc | abstain | "
+                "| checkpoint | items | errors | acc (all orders) | acc (order 0) | Bayesian acc | abstain | "
                 "consistency | DCS | Ternary | letter preference |"
             )
-            lines.append("|---|---:|---:|---:|---:|---:|---:|---:|---:|---|")
+            lines.append("|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|")
             for checkpoint, stats in by_checkpoint.items():
                 s = stats.get(subject)
                 if not s:
@@ -170,7 +176,7 @@ def to_markdown(summary: dict[str, Any]) -> str:
                 m = s.get("metrics", {})
                 pref = " ".join(f"{k}:{v:.2f}" for k, v in s.get("letter_preference", {}).items())
                 lines.append(
-                    f"| {checkpoint} | {s.get('n_items', '–')} | {_fmt(s.get('accuracy_all_orders'))} | "
+                    f"| {checkpoint} | {s.get('n_items', '–')} | {s.get('errors', '–')} | {_fmt(s.get('accuracy_all_orders'))} | "
                     f"{_fmt(s.get('accuracy_order_0'))} | {_fmt(m.get('Accuracy Bayesian Loglikelihood'))} | "
                     f"{_fmt(s.get('abstention_rate'))} | {_fmt(s.get('consistency'))} | "
                     f"{_fmt(m.get('Distributional Correctness Score'))} | {_fmt(m.get('Ternary Score'))} | {pref} |"
