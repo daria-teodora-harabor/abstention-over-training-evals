@@ -15,8 +15,9 @@ This module has no ``register_tasks``, so the loader imports it for the shared c
 nothing from it.
 """
 
+import itertools
 import os
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -199,12 +200,13 @@ class LocalJsonlMcqTask(BaseTask[str]):
 
     Each item's gold answer and distractors are shuffled into a fixed base order (seeded by the item id
     and question, so every variant of a task scores the same order); a visible abstention goes after
-    them. With ``OPTION_ROTATIONS`` set (the lettered tasks), the item is then scored under every
-    cyclic rotation of that list, one sample per rotation, so each option, the abstention included,
-    sits at every letter exactly once and the mean over samples carries no letter-position bias.
-    Rotation 0 is the base order. The cloze tasks show no options, so they are not rotated. Items are
-    reported under two subjects: ``main`` and, when the file has any, ``control`` (items about real
-    entities).
+    them. ``OPTION_ORDERS`` then says how the shown options are ordered across samples: ``"fixed"``
+    (the base order only), ``"cyclic"`` (every cyclic rotation, one sample each) or ``"all"`` (every
+    permutation, one sample each; 24 for four options, 120 for five). Under ``"cyclic"`` and ``"all"``
+    every option, the abstention included, is shown under every letter equally often, so the mean over
+    samples carries no letter-position bias; ``"all"`` also varies the neighbours. Order 0 is always
+    the base order. The cloze tasks show no options, so they stay ``"fixed"``. Items are reported under
+    two subjects: ``main`` and, when the file has any, ``control`` (items about real entities).
     """
 
     # Set by subclasses.
@@ -214,9 +216,9 @@ class LocalJsonlMcqTask(BaseTask[str]):
     # When set, the abstention text that ``TASK_STYLER`` scores as a hidden extra completion
     # (cloze tasks); recorded in the metadata only, the styler adds the completion itself.
     SCORED_ABSTENTION: str | None = None
-    # When True, every item yields one sample per cyclic rotation of its shown options (see the
+    # How the shown options are ordered across an item's samples: "fixed", "cyclic" or "all" (see the
     # class docstring). Only meaningful for tasks that show the options.
-    OPTION_ROTATIONS: bool = False
+    OPTION_ORDERS: str = "fixed"
 
     SAMPLE_SPLIT = "test"
     FEWSHOT_SPLIT = "test"
@@ -277,44 +279,56 @@ class LocalJsonlMcqTask(BaseTask[str]):
                     "correct_index": correct_index,
                     # Position of the visible abstention in ``choices`` (None without one).
                     "abstention_index": len(choices) - 1 if abstention is not None else None,
-                    "rotation": 0,
+                    "order": 0,
                     "provenance": item.provenance.model_dump(mode="json"),
                 }
             )
         self.dataset = {self.SAMPLE_SPLIT: rows, self.FEWSHOT_SPLIT: rows}
 
-    @staticmethod
-    def rotate_options(item: dict[str, Any], k: int) -> dict[str, Any]:
-        """Return a copy of ``item`` with its option list rotated left by ``k`` places.
+    @classmethod
+    def option_orders(cls, n: int) -> list[tuple[int, ...]]:
+        """The orders ``OPTION_ORDERS`` prescribes for ``n`` options, order 0 being the base order.
 
-        The option at position ``j`` moves to ``(j - k) mod n``, so over ``k = 0 .. n-1`` every option
-        sits at every position exactly once. ``correct_index`` and ``abstention_index`` follow their
-        options; ``rotation`` records ``k``.
+        Each order lists, per shown position, the index of the base-order option shown there.
         """
-        n = len(item["choices"])
-        k %= n
-        rotated = dict(item, choices=[*item["choices"][k:], *item["choices"][:k]], rotation=k)
-        rotated["correct_index"] = (int(item["correct_index"]) - k) % n
-        if item.get("abstention_index") is not None:
-            rotated["abstention_index"] = (int(item["abstention_index"]) - k) % n
-        return rotated
+        mode = cls.OPTION_ORDERS
+        if mode == "fixed":
+            return [tuple(range(n))]
+        if mode == "cyclic":
+            return [tuple((j + k) % n for j in range(n)) for k in range(n)]
+        if mode == "all":
+            return list(itertools.permutations(range(n)))  # lexicographic, so the identity comes first
+        raise ValueError(f"{cls.__name__}.OPTION_ORDERS must be 'fixed', 'cyclic' or 'all', not {mode!r}")
 
-    def _rotations(self, item: dict[str, Any]) -> list[dict[str, Any]]:
-        if not type(self).OPTION_ROTATIONS:
+    @staticmethod
+    def reorder_options(item: dict[str, Any], order: Sequence[int], index: int) -> dict[str, Any]:
+        """Return a copy of ``item`` showing base-order option ``order[j]`` at position ``j``.
+
+        ``correct_index`` and ``abstention_index`` follow their options; ``order`` records ``index``.
+        """
+        reordered = dict(item, choices=[item["choices"][i] for i in order], order=index)
+        reordered["correct_index"] = list(order).index(int(item["correct_index"]))
+        if item.get("abstention_index") is not None:
+            reordered["abstention_index"] = list(order).index(int(item["abstention_index"]))
+        return reordered
+
+    def _orders(self, item: dict[str, Any]) -> list[dict[str, Any]]:
+        orders = self.option_orders(len(item["choices"]))
+        if len(orders) == 1:
             return [item]
-        return [self.rotate_options(item, k) for k in range(len(item["choices"]))]
+        return [self.reorder_options(item, order, index) for index, order in enumerate(orders)]
 
     def _create_samples(self, item: dict[str, Any], index: int, subject: str) -> list[Sample]:
         samples: list[Sample] = []
-        for offset, rotated in enumerate(self._rotations(item)):
-            samples.extend(super()._create_samples(rotated, index + offset, subject))
+        for offset, reordered in enumerate(self._orders(item)):
+            samples.extend(super()._create_samples(reordered, index + offset, subject))
         return samples
 
     def sample_manifest(self) -> list[dict[str, Any]]:
         """One row per sample, in ``iterate_samples`` order, saying what the sample scores.
 
         A run's ``output.jsonl`` identifies a sample only by ``subject`` and ``id``. This maps them back
-        to the item, the rotation, the shown options, the gold completion and the abstention
+        to the item, the option order, the shown options, the gold completion and the abstention
         completion (``None`` without one), for the per-item analysis in
         ``scripts/nonexistent_entities_mcq/summarise_runs.py``.
         """
@@ -324,20 +338,20 @@ class LocalJsonlMcqTask(BaseTask[str]):
             self._load_dataset(subject)
             index = 0
             for item in self.dataset[self.SAMPLE_SPLIT]:
-                for rotated in self._rotations(item):
-                    completions = list(self._get_possible_completions(rotated) or [])
+                for reordered in self._orders(item):
+                    completions = list(self._get_possible_completions(reordered) or [])
                     rows.append(
                         {
                             "subject": subject,
                             "id": index,
-                            "item_id": rotated["id"],
-                            "category": rotated["category"],
-                            "control": rotated["control"],
-                            "question": rotated["question"],
-                            "rotation": rotated["rotation"],
-                            "choices": list(rotated["choices"]),
+                            "item_id": reordered["id"],
+                            "category": reordered["category"],
+                            "control": reordered["control"],
+                            "question": reordered["question"],
+                            "order": reordered["order"],
+                            "choices": list(reordered["choices"]),
                             "completions": completions,
-                            "gold": self._get_ground_truth(rotated),
+                            "gold": self._get_ground_truth(reordered),
                             "abstention": completions[-1] if has_abstention and completions else None,
                         }
                     )
@@ -353,7 +367,7 @@ class LocalJsonlMcqTask(BaseTask[str]):
         meta["prompt_author_types"] = sorted({item.provenance.author_type.value for item in items})
         meta["prompt_categories"] = sorted({item.category for item in items if item.category})
         meta["abstention_option"] = type(self).ABSTENTION_OPTION or type(self).SCORED_ABSTENTION or ""
-        meta["option_rotations"] = "all" if type(self).OPTION_ROTATIONS else "fixed"
+        meta["option_orders"] = type(self).OPTION_ORDERS
         meta["sample_count"] = str(len(self.sample_manifest()))
         return meta
 

@@ -10,18 +10,19 @@ whose gold answer is a true specific, check that a model cannot score well by al
 "does not exist" option.
 
 Option order carries no information. Each item's options are shuffled into a fixed base order (seeded
-by the item), and the lettered tasks then score the item under every cyclic rotation of that order, one
-sample per rotation: every option, the "I don't know" included, is shown under every letter exactly
-once, so the mean over samples is free of letter-position bias and rotation 0 reproduces the fixed
-order. The cloze tasks show no options and need no rotation.
+by the item), and the lettered tasks then score the item under every permutation of that order, one
+sample per permutation (24 with four options, 120 with five): every option, the "I don't know"
+included, is shown under every letter equally often and next to every other option, so the mean over
+samples is free of order bias, and order 0 reproduces the fixed order. The cloze tasks show no
+options and need no reordering.
 
 Four tasks read the same item file ``data/local/nonexistent_entities_mcq.jsonl``, in the two
 formulations OLMES (Gu et al., 2024, arXiv:2406.08446, section 2.1) recommends evaluating side by side:
 
 - ``NonexistentEntitiesMCQ``: multiple-choice formulation, the four options shown as lettered lines and
-  the letters scored; 4 rotations per item.
+  the letters scored; 24 orders per item.
 - ``NonexistentEntitiesMCQIdk``: the same with a fifth, visible option ``I don't know``, so a model can
-  abstain by letter; 5 rotations per item, and scored with the confidence-aware metrics as well
+  abstain by letter; 120 orders per item, and scored with the confidence-aware metrics as well
   (Distributional Correctness Score, Ternary Score), for which the abstention's letter is always the
   last scored completion.
 - ``NonexistentEntitiesMCQCloze``: cloze formulation, the question alone shown and each option's text
@@ -52,20 +53,20 @@ class NonexistentEntitiesMCQ(LocalJsonlMcqTask):
     NAME = "NonexistentEntitiesMCQ"
     PROMPTS_FILENAME = _ITEMS_FILENAME
     TASK_STYLER = MCStyle()
-    OPTION_ROTATIONS = True
+    OPTION_ORDERS = "all"
 
 
 class NonexistentEntitiesMCQIdk(LocalJsonlMcqTask):
     """The same items with a visible fifth option, ``I don't know``, and confidence-aware scoring.
 
-    The abstention is shown under every letter once across an item's five rotations.
+    The abstention is shown under every letter, next to every other option, across an item's 120 orders.
     """
 
     NAME = "NonexistentEntitiesMCQIdk"
     PROMPTS_FILENAME = _ITEMS_FILENAME
     TASK_STYLER = MCStyleWithShownAbstention()
     ABSTENTION_OPTION = IDK_OPTION
-    OPTION_ROTATIONS = True
+    OPTION_ORDERS = "all"
 
 
 class NonexistentEntitiesMCQCloze(LocalJsonlMcqTask):

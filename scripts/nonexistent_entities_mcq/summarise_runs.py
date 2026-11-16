@@ -5,14 +5,14 @@
 
 Reads ``<output-dir>/runs.jsonl`` (written by ``run_checkpoints.py``) and, for every run recorded as
 ``ok``, the framework's ``results.jsonl`` (per-sample metric values) and ``output.jsonl`` (per-sample
-log-likelihoods). The latter is joined with the task's sample manifest (which item and rotation each
+log-likelihoods). The latter is joined with the task's sample manifest (which item and option order each
 sample is) to report, per checkpoint, task and subject:
 
-- the framework's metrics averaged over all samples, i.e. over all rotations (raw and Bayesian,
+- the framework's metrics averaged over all samples, i.e. over all option orders (raw and Bayesian,
   length-corrected, accuracy; DCS and Ternary on the IDK tasks);
-- accuracy under rotation 0 only: the fixed order, what a single-order run would have reported;
+- accuracy under order 0 only: the fixed order, what a single-order run would have reported;
 - abstention rate: how often the argmax completion is "I don't know";
-- consistency: the share of items whose chosen option (by content) is the same under every rotation;
+- consistency: the share of items whose chosen option (by content) is the same under every order;
 - letter preference (lettered tasks): the distribution of the argmax letter, uniform if the model reads
   the content rather than the position.
 
@@ -77,7 +77,7 @@ def summarise_run(
 
     for subject, subject_responses in by_subject.items():
         correct: list[float] = []
-        correct_rot0: list[float] = []
+        correct_order0: list[float] = []
         abstained: list[float] = []
         letters: Counter[str] = Counter()
         chosen_by_item: dict[str, list[str]] = defaultdict(list)
@@ -96,8 +96,8 @@ def summarise_run(
             chosen = max(loglikelihoods, key=loglikelihoods.get)
             is_correct = float(chosen == row["gold"])
             correct.append(is_correct)
-            if row["rotation"] == 0:
-                correct_rot0.append(is_correct)
+            if row["order"] == 0:
+                correct_order0.append(is_correct)
             abstained.append(float(row["abstention"] is not None and chosen == row["abstention"]))
             if lettered:
                 letters[chosen.strip()] += 1
@@ -111,8 +111,8 @@ def summarise_run(
             "n_samples": len(subject_responses),
             "n_items": len(chosen_by_item),
             "errors": errors,
-            "accuracy_all_rotations": _mean(correct),
-            "accuracy_rotation_0": _mean(correct_rot0),
+            "accuracy_all_orders": _mean(correct),
+            "accuracy_order_0": _mean(correct_order0),
             "abstention_rate": _mean(abstained),
             "consistency": _mean([float(len(set(c)) == 1) for c in chosen_by_item.values()]),
             "letter_preference": {k: round(v / n_letters, 3) for k, v in sorted(letters.items())} if n_letters else {},
@@ -159,7 +159,7 @@ def to_markdown(summary: dict[str, Any]) -> str:
         for subject in subjects:
             lines.append(f"### {task_name} ({subject})\n")
             lines.append(
-                "| checkpoint | items | acc (all rotations) | acc (rotation 0) | Bayesian acc | abstain | "
+                "| checkpoint | items | acc (all orders) | acc (order 0) | Bayesian acc | abstain | "
                 "consistency | DCS | Ternary | letter preference |"
             )
             lines.append("|---|---:|---:|---:|---:|---:|---:|---:|---:|---|")
@@ -170,8 +170,8 @@ def to_markdown(summary: dict[str, Any]) -> str:
                 m = s.get("metrics", {})
                 pref = " ".join(f"{k}:{v:.2f}" for k, v in s.get("letter_preference", {}).items())
                 lines.append(
-                    f"| {checkpoint} | {s.get('n_items', '–')} | {_fmt(s.get('accuracy_all_rotations'))} | "
-                    f"{_fmt(s.get('accuracy_rotation_0'))} | {_fmt(m.get('Accuracy Bayesian Loglikelihood'))} | "
+                    f"| {checkpoint} | {s.get('n_items', '–')} | {_fmt(s.get('accuracy_all_orders'))} | "
+                    f"{_fmt(s.get('accuracy_order_0'))} | {_fmt(m.get('Accuracy Bayesian Loglikelihood'))} | "
                     f"{_fmt(s.get('abstention_rate'))} | {_fmt(s.get('consistency'))} | "
                     f"{_fmt(m.get('Distributional Correctness Score'))} | {_fmt(m.get('Ternary Score'))} | {pref} |"
                 )

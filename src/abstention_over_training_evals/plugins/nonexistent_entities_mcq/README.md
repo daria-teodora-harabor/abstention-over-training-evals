@@ -51,25 +51,27 @@ picking the best option, and treat the raw accuracy as a lower bound.
 
 Option order must carry no information. Each item's gold and wrong options are shuffled once into a
 fixed base order, seeded by the item (eval-framework's `shuffle_correct_with_distractors`), and the
-`I don't know` option is appended. The two lettered tasks then score every item under every cyclic
-rotation of that list, one sample per rotation: with 4 options there are 4 samples per item, with
-the fifth `I don't know` 5, and every option, the abstention included, is shown under every letter
-exactly once. The task's accuracy is the mean over samples, so it carries no letter-position bias,
-and rotation 0 reproduces the fixed order for anyone who wants a single-order number. The
-confidence-aware metrics read the last scored completion as the abstention, so the lettered IDK task
-always scores the abstention's letter last, whichever letter it is shown under.
+`I don't know` option is appended. The two lettered tasks then score every item under every
+permutation of that list, one sample per permutation: 24 with four options, 120 with the fifth
+`I don't know`. Every option, the abstention included, is shown under every letter equally often and
+next to every other option, so the task's accuracy, the mean over samples, carries no order bias.
+Order 0 is the base order, for anyone who wants a single-order number. The confidence-aware metrics
+read the last scored completion as the abstention, so the lettered IDK task always scores the
+abstention's letter last, whichever letter it is shown under.
 
 A single random order per item would not do this: with 50 items the gold and the abstention would
 land unevenly across the letters by chance, and a model's letter preference (early base checkpoints
-often favour the first or last option) would leak into the score. The rotations also give two
+often favour the first or last option) would leak into the score. The permutations also give two
 diagnostics per checkpoint: the distribution of the chosen letter (uniform if the model reads the
-content) and the share of items whose chosen option is the same under every rotation.
+content) and the share of items whose chosen option is the same under every order. `OPTION_ORDERS`
+on the task class selects `"all"` (the default here), `"cyclic"` (every rotation, 4 or 5 samples per
+item) or `"fixed"`.
 
-The cloze tasks show no options, so there is nothing to rotate; the hidden abstention is last in the
+The cloze tasks show no options, so there is nothing to reorder; the hidden abstention is last in the
 scored list only, which the model never sees.
 
 `--num-samples` on the CLI counts samples, not items: for the lettered tasks it cuts at a multiple of
-the rotation count to keep whole items.
+the order count to keep whole items.
 
 ## Item file
 
@@ -129,8 +131,8 @@ uv run python scripts/nonexistent_entities_mcq/run_checkpoints.py \
   --checkpoints base@stage1-step72000 base@stage1-step335000 base@stage1-step656000 \
   --tasks NonexistentEntitiesMCQ NonexistentEntitiesMCQIdk
 
-# the tables (per task and subject: accuracy over all rotations and under rotation 0, Bayesian
-# accuracy, abstention rate, consistency across rotations, DCS, Ternary, letter preference)
+# the tables (per task and subject: accuracy over all orders and under order 0, Bayesian
+# accuracy, abstention rate, consistency across orders, DCS, Ternary, letter preference)
 uv run python scripts/nonexistent_entities_mcq/summarise_runs.py
 ```
 
@@ -152,13 +154,14 @@ revisions (`step_050` to `step_750`). `--num-fewshot k` draws k other items from
 examples (the current item is excluded); because 45 of the 50 items are fake, examples mostly show
 the "does not exist" answer, so zero-shot is the primary setting.
 
-The cost is the download, not the scoring: a 32B checkpoint is 64.5 GB, the four tasks together are
-about 2,500 short forward passes (50 items × (4 + 5) rotations × letters, plus 50 × (4 + 5) cloze
-completions), a few minutes on one 80 GB GPU. Budget roughly 20 to 30 minutes of pod time per
+The cost is the download: a 32B checkpoint is 64.5 GB. The scoring is 7,200 lettered prompts (50 ×
+24 + 50 × 120) plus 450 cloze completions per checkpoint; the adapter scores every letter of a prompt
+from one forward pass and batches prompts, so this is a few minutes on one 80 GB GPU (about an hour
+with eval-framework's one-pass-per-letter default). Budget roughly 25 to 35 minutes of pod time per
 checkpoint, including the download, and run all four tasks whenever a checkpoint is loaded.
 
 ## Status
 
 The 50 items (45 fake, 5 controls, 10 per category) are in `data/local/nonexistent_entities_mcq.jsonl`,
-converted from the curation sheet on 15 November 2026. Option rotations, the in-process checkpoint
+converted from the curation sheet on 15 November 2026. Option permutations, the in-process checkpoint
 adapter and the sweep runner were added on 15 November 2026; runs on the checkpoints are pending.
