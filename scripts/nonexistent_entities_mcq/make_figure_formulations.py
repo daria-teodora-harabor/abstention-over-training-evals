@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-r"""One figure comparing the six question framings on accuracy and abstention over training.
+r"""One figure comparing the six question formulations on accuracy and abstention over training.
 
-    uv run --with matplotlib python scripts/nonexistent_entities_mcq/make_figure_framings.py \
+    uv run --with matplotlib python scripts/nonexistent_entities_mcq/make_figure_formulations.py \
         --summary <sweep summary.json> --reasoned <reasoned_summary.json> --out <png>
 
-Framings: the lettered multiple-choice prompt scored on the answer letter (immediate), the same
+Formulations: the lettered multiple-choice prompt scored on the answer letter (immediate), the same
 options scored as cloze continuations with the Bayesian length correction, and the lettered prompt
 answered after a reasoning trace (post-training checkpoints only); each with and without the
 "I don't know" option. Colour = how the question is asked and scored; dashed line and open marker =
@@ -196,7 +196,7 @@ def draw(summaries: dict[str, dict], out: Path) -> None:
         )
     fig.legend(handles=handles, frameon=False, fontsize=8.5, ncol=3, loc="upper center", bbox_to_anchor=(0.5, 0.965))
     fig.suptitle(
-        "How the question framing changes accuracy and abstention over Olmo 3 32B training",
+        "How the question formulation changes accuracy and abstention over Olmo 3 32B training",
         fontsize=11.5,
         color=INK,
         x=0.065,
