@@ -141,21 +141,6 @@ Each task is isolated: its own directory, its own `data/local/` file, and a uniq
 `AOTE_PROMPTS_PATH__<NAME>` (e.g. `AOTE_PROMPTS_PATH__MyTask=/path/to/my_task.jsonl`); the override
 applies only to that task.
 
-## Base-model variants: multiple choice scored by log-likelihood
-
-Pre-trained checkpoints are not instruction-tuned and will not answer a safety prompt, so a task's
-base-model variant asks the same question as a multiple-choice item and scores the log-likelihood of
-each lettered option. Subclass `LocalJsonlMcqTask` (in `plugins/base.py`) instead of
-`LocalJsonlSafetyTask`, set `TASK_STYLER = MCStyle()`, and write items as
-`{"id", "question", "gold", "distractors", "provenance", "category", "control"}` lines (validated by
-`McqItem`). Setting `TASK_STYLER = MCStyleWithShownAbstention()` and `ABSTENTION_OPTION = "I don't know"`
-adds a visible last option the model can abstain with and the confidence-aware metrics
-(Distributional Correctness Score, Ternary Score). Items marked `control` are reported as their own
-subject. `plugins/nonexistent_entities_mcq/` is the first such variant; its
-[README](src/abstention_over_training_evals/plugins/nonexistent_entities_mcq/README.md) has the item
-schema, the curation workflow and the run command (the model must be loaded in-process through
-eval-framework's Hugging Face class: the OpenAI-compatible client cannot score prompt tokens).
-
 ## Evaluation data
 
 Prompts live in [`data/local/unsafe_elicitation.jsonl`](data/local/unsafe_elicitation.jsonl), one
