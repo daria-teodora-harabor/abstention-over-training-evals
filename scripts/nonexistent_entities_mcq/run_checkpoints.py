@@ -61,7 +61,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--keep-weights", action="store_true", help="Do not delete a checkpoint's weights after scoring."
     )
     parser.add_argument("--num-samples", type=int, default=None, help="Cap on samples per subject (debugging only).")
-    parser.add_argument("--batch-size", type=int, default=1)
+    parser.add_argument("--batch-size", type=int, default=1, help="eval-framework samples per logprobs call.")
+    parser.add_argument(
+        "--letter-batch-size", type=int, default=8, help="Prompts per forward pass when scoring letters."
+    )
+    parser.add_argument("--no-fast-letters", action="store_true", help="Score letters one pass per letter (slow).")
     parser.add_argument("--dry-run", action="store_true", help="Print the plan and exit.")
     return parser.parse_args(argv)
 
@@ -113,7 +117,12 @@ def main(argv: list[str] | None = None) -> int:
             continue
         label = checkpoint_label(checkpoint)
         t0 = time.time()
-        llm = OlmoHFCheckpoint(checkpoint, weights_dir=str(args.weights_dir) if args.weights_dir else None)
+        llm = OlmoHFCheckpoint(
+            checkpoint,
+            weights_dir=str(args.weights_dir) if args.weights_dir else None,
+            fast_letters=not args.no_fast_letters,
+            letter_batch_size=args.letter_batch_size,
+        )
         load_seconds = time.time() - t0
         print(f"[{label}] downloaded and loaded in {load_seconds:.0f}s")
         for task in tasks:
@@ -124,7 +133,7 @@ def main(argv: list[str] | None = None) -> int:
                 num_fewshot=0,
                 num_samples=args.num_samples,
                 output_dir=args.output_dir / label,
-                batch_size=args.batch_size,
+                batch_size=args.batch_size if args.no_fast_letters else max(args.batch_size, args.letter_batch_size),
                 wandb_upload_results=False,
                 description=f"{label} on {task}",
             )

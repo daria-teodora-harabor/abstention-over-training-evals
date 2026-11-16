@@ -1,6 +1,7 @@
 import json
 import re
 from collections import defaultdict
+from itertools import permutations
 
 import pytest
 
@@ -84,22 +85,26 @@ def _options(sample) -> list[str]:
     return [m.group(2) for line in lines if (m := _OPTION_LINE.match(line))]
 
 
-def _by_item(samples, rotations):
-    """Group a lettered task's samples into per-item lists of option lists, in rotation order."""
+ORDERS_PLAIN = 24  # 4! permutations of four options
+ORDERS_IDK = 120  # 5! permutations with the visible abstention
+
+
+def _by_item(samples, orders):
+    """Group a lettered task's samples into per-item lists of option lists, in order index."""
     grouped = defaultdict(list)
     for sample in samples:
-        grouped[(sample.subject, sample.id // rotations)].append(_options(sample))
+        grouped[(sample.subject, sample.id // orders)].append(_options(sample))
     return list(grouped.values())
 
 
-def _rotation_0(samples, rotations):
-    return [s for s in samples if s.id % rotations == 0]
+def _order_0(samples, orders):
+    return [s for s in samples if s.id % orders == 0]
 
 
 def test_samples_are_lettered_multiple_choice(items_file):
     task = _task(NonexistentEntitiesMCQ)
     samples = list(task.iterate_samples())
-    assert len(samples) == 3 * 4  # three items, four rotations each
+    assert len(samples) == 3 * ORDERS_PLAIN  # three items, every permutation of four options
     assert task.get_response_type() is ResponseType.LOGLIKELIHOODS
     for sample in samples:
         user, cue = sample.messages
@@ -114,24 +119,45 @@ def test_samples_are_lettered_multiple_choice(items_file):
 
 def test_items_split_into_main_and_control_subjects(items_file):
     samples = list(_task(NonexistentEntitiesMCQ).iterate_samples())
-    assert sorted(s.subject for s in samples) == ["control"] * 4 + ["main"] * 8
+    assert sorted(s.subject for s in samples) == ["control"] * ORDERS_PLAIN + ["main"] * (2 * ORDERS_PLAIN)
     control = [s for s in samples if s.subject == "control"]
     assert all("lamotrigine" in s.messages[0].content for s in control)
-    assert [s.id for s in control] == [0, 1, 2, 3]  # ids restart per subject
+    assert [s.id for s in control] == list(range(ORDERS_PLAIN))  # ids restart per subject
 
 
-def test_every_option_is_shown_under_every_letter_exactly_once_per_item(items_file):
-    for item_rotations in _by_item(_task(NonexistentEntitiesMCQ).iterate_samples(), rotations=4):
-        base = item_rotations[0]
-        assert item_rotations == [base[k:] + base[:k] for k in range(4)]
+def test_every_permutation_is_shown_once_per_item(items_file):
+    for item_orders in _by_item(_task(NonexistentEntitiesMCQ).iterate_samples(), orders=ORDERS_PLAIN):
+        base = item_orders[0]
+        assert sorted(map(tuple, item_orders)) == sorted(permutations(base))
+        assert len(set(map(tuple, item_orders))) == ORDERS_PLAIN
         for position in range(4):
-            assert {options[position] for options in item_rotations} == set(base)
+            for option in base:
+                assert sum(options[position] == option for options in item_orders) == 6  # 3! each
 
 
-def test_rotation_zero_is_the_seeded_base_order_shared_by_every_variant(items_file):
-    plain = [_options(s) for s in _rotation_0(_task(NonexistentEntitiesMCQ).iterate_samples(), 4)]
-    again = [_options(s) for s in _rotation_0(_task(NonexistentEntitiesMCQ).iterate_samples(), 4)]
-    with_idk = [_options(s) for s in _rotation_0(_task(NonexistentEntitiesMCQIdk).iterate_samples(), 5)]
+def test_cyclic_and_fixed_orders_are_available(items_file):
+    assert NonexistentEntitiesMCQ.option_orders(4) == list(permutations(range(4)))
+    assert NonexistentEntitiesMCQCloze.option_orders(4) == [(0, 1, 2, 3)]
+
+    class Cyclic(NonexistentEntitiesMCQ):
+        OPTION_ORDERS = "cyclic"
+
+    assert Cyclic.option_orders(4) == [(0, 1, 2, 3), (1, 2, 3, 0), (2, 3, 0, 1), (3, 0, 1, 2)]
+    for item_orders in _by_item(_task(Cyclic).iterate_samples(), orders=4):
+        base = item_orders[0]
+        assert item_orders == [base[k:] + base[:k] for k in range(4)]
+
+    class Broken(NonexistentEntitiesMCQ):
+        OPTION_ORDERS = "random"
+
+    with pytest.raises(ValueError, match="OPTION_ORDERS"):
+        Broken.option_orders(4)
+
+
+def test_order_zero_is_the_seeded_base_order_shared_by_every_variant(items_file):
+    plain = [_options(s) for s in _order_0(_task(NonexistentEntitiesMCQ).iterate_samples(), ORDERS_PLAIN)]
+    again = [_options(s) for s in _order_0(_task(NonexistentEntitiesMCQ).iterate_samples(), ORDERS_PLAIN)]
+    with_idk = [_options(s) for s in _order_0(_task(NonexistentEntitiesMCQIdk).iterate_samples(), ORDERS_IDK)]
     assert plain == again
     assert [o[:4] for o in with_idk] == plain
     assert all(o[4] == IDK_OPTION for o in with_idk)
@@ -149,7 +175,7 @@ def test_rotation_zero_is_the_seeded_base_order_shared_by_every_variant(items_fi
 def test_idk_variant_shows_the_abstention_under_every_letter_and_scores_it_last(items_file):
     task = _task(NonexistentEntitiesMCQIdk)
     samples = list(task.iterate_samples())
-    assert len(samples) == 3 * 5
+    assert len(samples) == 3 * ORDERS_IDK
     for sample in samples:
         options = _options(sample)
         assert len(options) == 5
@@ -158,29 +184,32 @@ def test_idk_variant_shows_the_abstention_under_every_letter_and_scores_it_last(
         assert sample.possible_completions[-1] == idk_letter  # the confidence metrics read the last one
         assert sample.ground_truth != idk_letter
         assert sample.ground_truth in sample.possible_completions
-    for item_rotations in _by_item(samples, rotations=5):
-        assert sorted(options.index(IDK_OPTION) for options in item_rotations) == [0, 1, 2, 3, 4]
+    for item_orders in _by_item(samples, orders=ORDERS_IDK):
+        assert (
+            sorted(options.index(IDK_OPTION) for options in item_orders)
+            == [0] * 24 + [1] * 24 + [2] * 24 + [3] * 24 + [4] * 24
+        )
     metrics = NonexistentEntitiesMCQIdk.get_metrics()
     assert DistributionalCorrectnessScore in metrics
     assert TernaryScore in metrics
     assert DistributionalCorrectnessScore not in NonexistentEntitiesMCQ.get_metrics()
 
 
-def test_metadata_describes_the_item_file_and_the_rotations(items_file):
+def test_metadata_describes_the_item_file_and_the_orders(items_file):
     meta = _task(NonexistentEntitiesMCQIdk).get_metadata()
     assert meta["dataset_format"] == "local-jsonl-mcq"
     assert meta["prompt_count"] == "3"
-    assert meta["sample_count"] == "15"
+    assert meta["sample_count"] == str(3 * ORDERS_IDK)
     assert meta["control_count"] == "1"
     assert meta["prompt_author_types"] == ["human"]
     assert meta["prompt_categories"] == ["electrical_code", "prescription_drug"]
     assert meta["abstention_option"] == IDK_OPTION
-    assert meta["option_rotations"] == "all"
+    assert meta["option_orders"] == "all"
     plain = _task(NonexistentEntitiesMCQ).get_metadata()
     assert plain["abstention_option"] == ""
-    assert plain["sample_count"] == "12"
+    assert plain["sample_count"] == str(3 * ORDERS_PLAIN)
     cloze = _task(NonexistentEntitiesMCQCloze).get_metadata()
-    assert cloze["option_rotations"] == "fixed"
+    assert cloze["option_orders"] == "fixed"
     assert cloze["sample_count"] == "3"
 
 
@@ -198,7 +227,7 @@ def test_empty_or_missing_item_file_is_an_actionable_error(tmp_path, monkeypatch
 def test_cloze_variant_shows_only_the_question_and_scores_the_option_texts(items_file):
     task = _task(NonexistentEntitiesMCQCloze)
     samples = list(task.iterate_samples())
-    assert len(samples) == 3  # nothing is shown, so nothing to rotate
+    assert len(samples) == 3  # nothing is shown, so nothing to reorder
     assert task.get_response_type() is ResponseType.LOGLIKELIHOODS
     for sample in samples:
         user, cue = sample.messages
@@ -232,7 +261,7 @@ def test_cloze_variants_score_the_options_in_the_base_order(items_file):
     def scored_texts(cls):
         return [[c[1:] for c in s.possible_completions] for s in _task(cls).iterate_samples()]
 
-    lettered = [_options(s) for s in _rotation_0(_task(NonexistentEntitiesMCQ).iterate_samples(), 4)]
+    lettered = [_options(s) for s in _order_0(_task(NonexistentEntitiesMCQ).iterate_samples(), ORDERS_PLAIN)]
     cloze = scored_texts(NonexistentEntitiesMCQCloze)
     cloze_idk = scored_texts(NonexistentEntitiesMCQClozeIdk)
     assert cloze == lettered
@@ -261,11 +290,11 @@ def test_sample_manifest_describes_every_sample_in_order(items_file, cls):
         assert row["question"] in sample.messages[0].content
         assert row["abstention"] == (sample.possible_completions[-1] if has_abstention else None)
         assert row["item_id"] in {item["id"] for item in ITEMS}
-        if cls.OPTION_ROTATIONS:
+        if cls.OPTION_ORDERS == "all":
             assert row["choices"] == _options(sample)
-            assert row["rotation"] == sample.id % len(row["choices"])
+            assert row["order"] == sample.id % len(cls.option_orders(len(row["choices"])))
         else:
-            assert row["rotation"] == 0
+            assert row["order"] == 0
 
 
 def test_register_tasks_registers_all_four_variants():

@@ -74,31 +74,31 @@ def _responses(manifest, choose):
 def test_always_picking_letter_a_shows_as_position_bias(items_file):
     script = _load_script()
     manifest = script._manifest("NonexistentEntitiesMCQIdk")
-    assert len(manifest) == 3 * 5
+    assert len(manifest) == 3 * 120
     stats = script.summarise_run("NonexistentEntitiesMCQIdk", _responses(manifest, lambda row: " A"), [], manifest)
     main = stats["main"]
     assert main["n_items"] == 2
-    assert main["n_samples"] == 10
-    # Letter A holds each of the five options once per item: gold once, the abstention once.
-    assert main["accuracy_all_rotations"] == pytest.approx(0.2)
+    assert main["n_samples"] == 240
+    # Letter A holds each option equally often: the gold a fifth of the time, the abstention likewise.
+    assert main["accuracy_all_orders"] == pytest.approx(0.2)
     assert main["abstention_rate"] == pytest.approx(0.2)
-    assert main["consistency"] == 0.0  # the content behind A changes with every rotation
+    assert main["consistency"] == 0.0  # the content behind A changes with the order
     assert main["letter_preference"] == {"A": 1.0}
-    assert stats["control"]["accuracy_all_rotations"] == pytest.approx(0.2)
+    assert stats["control"]["accuracy_all_orders"] == pytest.approx(0.2)
 
 
-def test_always_picking_the_gold_is_consistent_and_rotation_free(items_file):
+def test_always_picking_the_gold_is_consistent_and_order_free(items_file):
     script = _load_script()
     manifest = script._manifest("NonexistentEntitiesMCQIdk")
     stats = script.summarise_run(
         "NonexistentEntitiesMCQIdk", _responses(manifest, lambda row: row["gold"]), [], manifest
     )
     for subject in ("main", "control"):
-        assert stats[subject]["accuracy_all_rotations"] == 1.0
-        assert stats[subject]["accuracy_rotation_0"] == 1.0
+        assert stats[subject]["accuracy_all_orders"] == 1.0
+        assert stats[subject]["accuracy_order_0"] == 1.0
         assert stats[subject]["abstention_rate"] == 0.0
         assert stats[subject]["consistency"] == 1.0
-    # Across an item's five rotations the gold sits under every letter once.
+    # Across an item's 120 orders the gold sits under every letter equally often.
     assert stats["main"]["letter_preference"] == {k: pytest.approx(0.2) for k in "ABCDE"}
 
 
