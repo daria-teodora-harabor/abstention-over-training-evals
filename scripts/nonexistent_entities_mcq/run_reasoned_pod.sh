@@ -14,6 +14,10 @@ REPO=/workspace/abstention-over-training-evals
 OUT="${OUT:-/workspace/outputs}"
 BATCH="${BATCH:-400}"
 MAX_TOKENS="${MAX_TOKENS:-16384}"
+# Requests in flight (client) and sequences the server runs at once; 256 thrashes the KV cache on
+# the long-tracing checkpoints, 160 keeps it below capacity on an H200 at this prompt length.
+MAX_WORKERS="${MAX_WORKERS:-160}"
+MAX_SEQS="${MAX_SEQS:-160}"
 mkdir -p "$OUT"
 cd "$REPO"
 for spec in "$@"; do
@@ -24,7 +28,7 @@ c = parse_checkpoint(sys.argv[1]); print(c.model_id, c.revision, checkpoint_labe
   if [ -z "${LABEL:-}" ]; then echo "bad checkpoint spec: $spec" | tee -a "$OUT/runs.log"; continue; fi
   if grep -q "^$LABEL $TASK ok" "$OUT/runs.log" 2>/dev/null; then echo "[$(date -u +%H:%M:%S)] skip $LABEL $TASK (done)"; continue; fi
   echo "[$(date -u +%H:%M:%S)] $LABEL: starting vllm serve $MODEL --revision $REV"
-  vllm serve "$MODEL" --revision "$REV" --reasoning-parser olmo3 --max-model-len 20480 --max-num-seqs 256 \
+  vllm serve "$MODEL" --revision "$REV" --reasoning-parser olmo3 --max-model-len 20480 --max-num-seqs "$MAX_SEQS" \
     --gpu-memory-utilization 0.92 --port 8000 --served-model-name "$MODEL" > "$OUT/vllm_${LABEL}.log" 2>&1 &
   VPID=$!
   up=0
@@ -45,7 +49,7 @@ c = parse_checkpoint(sys.argv[1]); print(c.model_id, c.revision, checkpoint_labe
     --extra-tasks-dir src/abstention_over_training_evals/plugins/nonexistent_entities_mcq_reasoned \
     --task-name "$TASK" \
     --llm-name abstention_over_training_evals.adapters.olmo_vllm.Olmo3Think32B \
-    --llm-args base_url=http://127.0.0.1:8000/v1 api_key=EMPTY "model_name=$MODEL" timeout=3600 max_workers=256 \
+    --llm-args base_url=http://127.0.0.1:8000/v1 api_key=EMPTY "model_name=$MODEL" timeout=3600 "max_workers=$MAX_WORKERS" \
     --output-dir "$OUT/$LABEL" --num-fewshot 0 --batch-size "$BATCH" --max-tokens "$MAX_TOKENS" \
     > "$OUT/eval_${LABEL}_${TASK}.log" 2>&1
   rc=$?
