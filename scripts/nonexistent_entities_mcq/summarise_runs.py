@@ -19,7 +19,10 @@ sample is) to report, per checkpoint, task and subject:
 - abstention rate: how often the argmax completion is "I don't know";
 - consistency: the share of items whose chosen option (by content) is the same under every order;
 - letter preference (lettered tasks): the distribution of the argmax letter, uniform if the model reads
-  the content rather than the position.
+  the content rather than the position;
+- 95% intervals by bootstrap over items (2,000 resamples of the items with replacement, each item's
+  value being its mean over orders), for accuracy, corrected accuracy and the abstention rates. Items
+  are the unit of sampling; the orders within an item are not independent draws.
 
 Writes ``<output-dir>/summary.md`` and ``summary.json`` and prints the markdown.
 """
@@ -29,6 +32,7 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import random
 import sys
 from collections import Counter, defaultdict
 from pathlib import Path
@@ -79,6 +83,17 @@ def _length_decay(responses: list[dict[str, Any]]) -> float:
     return 0.0 if denominator == 0 else numerator / denominator
 
 
+def _bootstrap_ci(per_item: dict[str, list[float]], resamples: int = 2000, seed: int = 0) -> list[float] | None:
+    """95% interval for the mean of per-item means, resampling items with replacement."""
+    means = [sum(v) / len(v) for v in per_item.values() if v]
+    if not means:
+        return None
+    rng = random.Random(seed)
+    n = len(means)
+    draws = sorted(sum(rng.choice(means) for _ in range(n)) / n for _ in range(resamples))
+    return [draws[int(0.025 * resamples)], draws[int(0.975 * resamples) - 1]]
+
+
 def _softmax(loglikelihoods: dict[str, float]) -> dict[str, float]:
     top = max(loglikelihoods.values())
     weights = {k: math.exp(v - top) for k, v in loglikelihoods.items()}
@@ -115,6 +130,9 @@ def summarise_run(
         abstained_bayes: list[float] = []
         letters: Counter[str] = Counter()
         chosen_by_item: dict[str, list[str]] = defaultdict(list)
+        by_item: dict[str, dict[str, list[float]]] = {
+            k: defaultdict(list) for k in ("correct", "correct_bayes", "abstained", "abstained_bayes")
+        }
         errors = 0
         for response in subject_responses:
             if (subject, response["id"]) not in manifest:
@@ -139,6 +157,10 @@ def summarise_run(
             chosen_bayes = max(corrected, key=corrected.get)
             correct_bayes.append(float(chosen_bayes == row["gold"]))
             abstained_bayes.append(float(row["abstention"] is not None and chosen_bayes == row["abstention"]))
+            by_item["correct"][row["item_id"]].append(correct[-1])
+            by_item["correct_bayes"][row["item_id"]].append(correct_bayes[-1])
+            by_item["abstained"][row["item_id"]].append(abstained[-1])
+            by_item["abstained_bayes"][row["item_id"]].append(abstained_bayes[-1])
             probs = _softmax(loglikelihoods)
             p_c = probs.get(row["gold"], 0.0)
             p_idk = probs.get(row["abstention"], 0.0) if row["abstention"] is not None else 0.0
@@ -162,6 +184,11 @@ def summarise_run(
             "abstention_rate": _mean(abstained),
             "accuracy_bayesian_recomputed": _mean(correct_bayes),
             "abstention_rate_bayesian": _mean(abstained_bayes),
+            "accuracy_ci95": _bootstrap_ci(by_item["correct"]),
+            "accuracy_bayesian_ci95": _bootstrap_ci(by_item["correct_bayes"]),
+            "abstention_ci95": _bootstrap_ci(by_item["abstained"]),
+            "abstention_bayesian_ci95": _bootstrap_ci(by_item["abstained_bayes"]),
+            "item_accuracy": {k: sum(v) / len(v) for k, v in sorted(by_item["correct"].items())},
             "length_decay": length_decay,
             "dcs_raw": _mean(dcs_raw),
             "p_gold": _mean(p_gold),
