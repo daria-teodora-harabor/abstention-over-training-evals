@@ -169,6 +169,8 @@ def main(argv: list[str] | None = None) -> int:
                 "stage": checkpoint.stage.value,
                 "task": task,
                 "load_seconds": round(load_seconds, 1),
+                "fast_letters": not args.no_fast_letters,
+                "letter_batch_size": args.letter_batch_size,
                 "output_dir": str(generate_output_dir(llm.name, config)),
             }
             t1 = time.time()
