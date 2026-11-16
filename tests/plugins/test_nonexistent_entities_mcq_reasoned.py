@@ -81,6 +81,11 @@ def _options(text):
         ("I think D) is right.\n\nAnswer: B", "B"),
         ("Option B looks tempting but the answer is A", "A"),
         ("A quick note: none of these.", None),
+        ("The answer depends on the dose.", None),
+        ("I cannot answer because the drug is unknown.", None),
+        ("The answer is a trick question.", None),
+        ("The answer could be either.", None),
+        ("e.g. none of them", None),
         ("I am not sure.", None),
         ("", None),
         (None, None),
@@ -123,7 +128,9 @@ def test_reasoned_idk_task_marks_the_abstention_letter(items_file):
         assert r.context.abstention_letter != r.ground_truth
 
 
-def _completion(answer, gold="C", abstention="E", reasoning="let me think", reasoning_tokens=3, error=None):
+def _completion(
+    answer, gold="C", abstention="E", reasoning="let me think", reasoning_tokens=3, error=None, finish_reason="stop"
+):
     return Completion.model_construct(
         id=0,
         subject="main",
@@ -133,7 +140,7 @@ def _completion(answer, gold="C", abstention="E", reasoning="let me think", reas
         raw_completion_num_tokens=None,
         raw_completion_reasoning_num_tokens=reasoning_tokens,
         raw_completion_reasoning=reasoning,
-        raw_completion_finish_reason="stop",
+        raw_completion_finish_reason=finish_reason,
         completion=answer,
         error=error,
         context=McqReasonedContext(item_id="pharma-01", order=0, gold_letter=gold, abstention_letter=abstention),
@@ -150,6 +157,7 @@ def test_letter_accuracy_scores_gold_abstention_and_unparseable():
         "Letter Accuracy": 1.0,
         "Abstention": 0.0,
         "Unparseable": 0.0,
+        "Truncated": 0.0,
         "Reasoning Tokens": 3.0,
         "Reasoning Chars": 12.0,
     }
@@ -158,6 +166,10 @@ def test_letter_accuracy_scores_gold_abstention_and_unparseable():
     wrong = _values(metric.calculate(_completion("Hmm, no idea.")))
     assert wrong["Letter Accuracy"] == 0.0 and wrong["Unparseable"] == 1.0
     assert _values(metric.calculate(_completion("C", reasoning_tokens=None)))["Reasoning Tokens"] is None
+    # A trace cut at the token cap comes back as the content with no reasoning: never scored as a letter.
+    cut = _values(metric.calculate(_completion("...so C. Hmm, but D", reasoning=None, finish_reason="length")))
+    assert cut["Letter Accuracy"] == 0.0 and cut["Unparseable"] == 1.0 and cut["Truncated"] == 1.0
+    assert cut["Reasoning Chars"] == float(len("...so C. Hmm, but D"))
 
 
 def test_letter_accuracy_passes_errors_through():

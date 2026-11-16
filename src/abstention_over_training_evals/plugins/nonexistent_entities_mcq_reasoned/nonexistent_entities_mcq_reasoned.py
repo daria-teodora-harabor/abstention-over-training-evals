@@ -40,7 +40,7 @@ _ITEMS_FILENAME = "nonexistent_entities_mcq.jsonl"
 # "**A. 25 mg**"); a line-opening "A " as the English article does not count. The last match wins, so
 # an answer that weighs options and then concludes is read at its conclusion.
 _LETTER_RE = re.compile(
-    r"(?:answer\s*(?:is|:)?\s*\**\s*\(?([A-E])\)?|(?:^|\*\*)\s*\(?([A-E])\)?(?:[.):]|\*\*|$))",
+    r"(?:answer\s*(?:is|:)?\s*\**\s*\(?(?-i:([A-E]))\)?(?![A-Za-z])|(?:^|\*\*)\s*\(?(?-i:([A-E]))\)?(?:[.):]|\*\*|$))",
     re.IGNORECASE | re.MULTILINE,
 )
 
@@ -70,11 +70,18 @@ class LetterAccuracy(BaseMetric[Completion]):
     def calculate(self, response: Completion) -> list[MetricResult]:
         if response.error is not None:
             return [MetricResult(metric_name=self.NAME, value=None, higher_is_better=True, error=response.error)]
-        letter = parse_letter(response.completion)
+        truncated = response.raw_completion_finish_reason == "length"
+        # A trace cut at the token cap never reaches an answer: vLLM then returns the whole trace as
+        # the content, which must not be scraped for a letter.
+        letter = None if truncated else parse_letter(response.completion)
         gold = response.ground_truth if isinstance(response.ground_truth, str) else None
         abstention = getattr(response.context, "abstention_letter", None)
-        reasoning = response.raw_completion_reasoning or ""
+        reasoning = response.raw_completion_reasoning or (response.completion if truncated else "") or ""
+        # vLLM does not report reasoning tokens separately; the answer after the trace is a few
+        # tokens, so the total generated count is a close proxy.
         reasoning_tokens = response.raw_completion_reasoning_num_tokens
+        if reasoning_tokens is None:
+            reasoning_tokens = response.raw_completion_num_tokens
         return [
             MetricResult(
                 metric_name=self.NAME, value=float(letter is not None and letter == gold), higher_is_better=True
@@ -85,6 +92,7 @@ class LetterAccuracy(BaseMetric[Completion]):
                 higher_is_better=False,
             ),
             MetricResult(metric_name="Unparseable", value=float(letter is None), higher_is_better=False),
+            MetricResult(metric_name="Truncated", value=float(truncated), higher_is_better=False),
             MetricResult(
                 metric_name="Reasoning Tokens",
                 value=float(reasoning_tokens) if reasoning_tokens is not None else None,
