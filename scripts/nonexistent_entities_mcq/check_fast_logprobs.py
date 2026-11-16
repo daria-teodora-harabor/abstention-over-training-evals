@@ -12,7 +12,7 @@ Two modes, both for the GPU machine before a sweep:
   argmax differs anywhere, or any prompt fell back to the reference path.
 
     uv run python scripts/nonexistent_entities_mcq/check_fast_logprobs.py --tokenizer /workspace/weights/<label>
-    uv run python scripts/nonexistent_entities_mcq/check_fast_logprobs.py [--model HuggingFaceTB/SmolLM-135M] [--dtype bfloat16]
+    uv run python scripts/nonexistent_entities_mcq/check_fast_logprobs.py [--model <small model>] [--dtype bfloat16]
 """
 
 from __future__ import annotations
@@ -35,8 +35,8 @@ def _tasks():
 
 
 def tokenizer_coverage(tokenizer_dir: str) -> bool:
-    from transformers import AutoTokenizer
     from template_formatting.formatter import ConcatFormatter
+    from transformers import AutoTokenizer
 
     from abstention_over_training_evals.adapters.olmo_hf import single_token_ids
 

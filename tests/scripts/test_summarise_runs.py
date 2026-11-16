@@ -126,9 +126,10 @@ def test_framework_metric_rows_are_averaged_per_subject(items_file):
     assert stats["control"]["metrics"] == {"Ternary Score": -1.0}
     markdown = script.to_markdown({"NonexistentEntitiesMCQIdk": {"allenai_Olmo-3-1125-32B@main": stats}})
     assert "### NonexistentEntitiesMCQIdk (main)" in markdown
-    assert (
-    assert "| allenai_Olmo-3-1125-32B@main | 2 | 0 | 1.00 | 1.00 | – | 0.00 | 0.00 | 0.93 | 1.00 | 0.87 | 0.50 |" in markdown
+    expected_row = (
+        "| allenai_Olmo-3-1125-32B@main | 2 | 0 | 1.00 | 1.00 | – | 0.00 | 0.00 | 0.93 | 1.00 | 0.87 | 0.50 |"
     )
+    assert expected_row in markdown
 
 
 def test_a_changed_item_file_is_detected(items_file):
