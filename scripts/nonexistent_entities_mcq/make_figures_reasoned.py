@@ -4,13 +4,12 @@ r"""Figures for the reasoned MCQ runs: a reasoned-only set and a comparison set 
     uv run --with matplotlib python scripts/nonexistent_entities_mcq/make_figures_reasoned.py \
         --reasoned reasoned_summary.json --immediate summary.json --out-dir figures
 
-Reasoned-only set (``r1``..``r3``): accuracy, abstention (IDK task) and answers without a letter per
-checkpoint; generated tokens per checkpoint by outcome (medians, since traces cut at the cap inflate
-means); per-category accuracy of the final Think model. Comparison set (``c1``..``c2``): immediate
-(log-likelihood) versus reasoned accuracy on the same checkpoints, with the paired per-item
-difference; a per-item scatter for the final Think model. Error bars are 95% bootstrap intervals over
-items. "Generated tokens" are trace plus answer; the summary's ``answer_chars_median`` says how much of
-that is answer.
+Reasoned-only set (``r1``..``r3``): accuracy, abstention (IDK task, with the immediate sweep's
+abstention overlaid) and answers without a letter per checkpoint; median trace length per outcome
+(answer text excluded, traces cut at the cap excluded); per-category accuracy of the final Think
+model. Comparison set (``c1``..``c2``): immediate (log-likelihood) versus reasoned accuracy on the
+same checkpoints, with the paired per-item difference; a per-item scatter for the final Think model.
+Error bars are 95% bootstrap intervals over items.
 """
 
 from __future__ import annotations
@@ -48,6 +47,7 @@ CATEGORIES = {
 INK, INK2, GRID = "#0b0b0b", "#52514e", "#e6e5e1"
 IMMEDIATE_COLOR = "#888780"
 THINK = "allenai_Olmo-3-32B-Think@main"
+IDK_QUOTE = "share answering “I don't know”"
 
 
 def style(ax: plt.Axes) -> None:
@@ -85,16 +85,23 @@ def _plot(ax, xs, ys, err, **kw):
     ax.errorbar(xs, ys, yerr=err, lw=2, ms=7, mec="white", mew=1.2, capsize=2.5, elinewidth=0.9, zorder=3, **kw)
 
 
-def fig_r1(reasoned: dict, out: Path) -> None:
+def fig_r1(reasoned: dict, out: Path, immediate: dict | None = None) -> None:
     fig, axes = plt.subplots(1, 3, figsize=(11, 3.6), dpi=160)
-    for task, _, name, color, marker, _ in TASKS:
+    for task, imm_task, name, color, marker, _ in TASKS:
         for subject, ls, suffix in (("main", "-", ", fake"), ("control", (0, (4, 2)), ", controls")):
             xs, ys, err = _series(reasoned, task, subject, "accuracy", "accuracy_ci95")
             if xs:
                 _plot(axes[0], xs, ys, err, color=color, ls=ls, marker=marker, label=name + suffix)
-            xs, ys, err = _series(reasoned, task, subject, "abstention_rate", None)
-            if xs and task.endswith("Idk"):
-                _plot(axes[1], xs, ys, err, color=color, ls=ls, marker=marker, label=name + suffix)
+            if task.endswith("Idk"):
+                xs, ys, err = _series(reasoned, task, subject, "abstention_rate", None)
+                if xs:
+                    _plot(axes[1], xs, ys, err, color=color, ls=ls, marker=marker, label=f"reasoned{suffix}")
+                if immediate:
+                    xi, yi, ei = _series(immediate, imm_task, subject, "abstention_rate", None)
+                    if xi:
+                        _plot(
+                            axes[1], xi, yi, ei, color=IMMEDIATE_COLOR, ls=ls, marker=marker, label=f"immediate{suffix}"
+                        )
         xs, ys, err = _series(reasoned, task, "main", "unparseable_rate", None)
         if xs:
             _plot(axes[2], xs, ys, err, color=color, ls="-", marker=marker, label=f"{name}: no letter (incl. cut)")
@@ -103,7 +110,7 @@ def fig_r1(reasoned: dict, out: Path) -> None:
             _plot(axes[2], xs, ys, err, color=color, ls=(0, (1, 2)), marker=marker, label=f"{name}: cut at 16k tokens")
     for ax, title, ylabel, top in (
         (axes[0], "Accuracy with reasoning", "share of answers on the gold letter", 1.0),
-        (axes[1], "Abstention with reasoning (IDK task)", "share answering “I don't know”", 1.0),
+        (axes[1], "Abstention, IDK task: reasoned vs immediate", IDK_QUOTE, 0.12),
         (axes[2], "Fake items: answers without a letter", "share", 0.12),
     ):
         _xaxis(ax)
@@ -113,9 +120,11 @@ def fig_r1(reasoned: dict, out: Path) -> None:
         style(ax)
     axes[0].axhline(0.25, color=INK2, lw=0.8, ls=(0, (3, 3)), zorder=1)
     axes[0].legend(frameon=False, fontsize=7, loc="lower right", handlelength=3)
+    axes[1].legend(frameon=False, fontsize=7, loc="upper right", handlelength=3)
     axes[2].legend(frameon=False, fontsize=7, loc="upper right", handlelength=3)
-    if not axes[1].lines:
-        axes[1].text(2.5, 0.5, "IDK task not run yet", ha="center", fontsize=8, color=INK2)
+    axes[2].text(
+        0.02, 0.92, "SFT 5k: prose answers with no letter", transform=axes[2].transAxes, fontsize=6, color=INK2
+    )
     fig.text(0.99, 0.005, "error bars: 95% bootstrap over items", fontsize=7, color=INK2, ha="right")
     fig.tight_layout()
     fig.savefig(out, facecolor="white")
@@ -125,8 +134,8 @@ def fig_r1(reasoned: dict, out: Path) -> None:
 def fig_r2(reasoned: dict, out: Path) -> None:
     fig, ax = plt.subplots(figsize=(9, 3.6), dpi=160)
     for task, _, name, color, marker, _ in TASKS:
-        xs, ok, _ = _series(reasoned, task, "main", "reasoning_tokens_median_correct", None)
-        xs2, bad, _ = _series(reasoned, task, "main", "reasoning_tokens_median_wrong", None)
+        xs, ok, _ = _series(reasoned, task, "main", "trace_tokens_median_correct", None)
+        xs2, bad, _ = _series(reasoned, task, "main", "trace_tokens_median_wrong", None)
         if xs:
             ax.plot(
                 xs,
@@ -155,12 +164,20 @@ def fig_r2(reasoned: dict, out: Path) -> None:
                 zorder=3,
             )
     _xaxis(ax)
-    ax.set_ylim(0, None)
-    ax.set_ylabel("median generated tokens (fake items)")
+    ax.set_ylim(0, 3800)
+    ax.set_ylabel("median trace tokens (fake items)")
     ax.set_title(
-        "How long the model reasons before answering: trace plus answer, median per outcome", fontsize=10, loc="left"
+        "How long the model reasons before answering: median trace length per outcome", fontsize=10, loc="left"
     )
     ax.legend(frameon=False, fontsize=7, ncol=2, loc="upper left", handlelength=3)
+    fig.text(
+        0.99,
+        0.01,
+        "answer text excluded (4 chars per token); traces cut at the 16k cap excluded",
+        fontsize=7,
+        color=INK2,
+        ha="right",
+    )
     style(ax)
     fig.tight_layout()
     fig.savefig(out, facecolor="white")
@@ -231,7 +248,8 @@ def fig_c1(reasoned: dict, immediate: dict, out: Path) -> None:
                     alpha=0.55,
                     label=f"{name}, immediate",
                 )
-            ax.axhline(chance, color=INK2, lw=0.8, ls=(0, (3, 3)), zorder=1)
+            ax.axhline(chance, color=color, lw=0.8, ls=(0, (3, 3)), zorder=1, alpha=0.6)
+            ax.text(len(ORDER) - 0.55, chance + 0.008, f"chance, {name}", fontsize=6, color=color, ha="right")
         ax.set_ylim(0, 1.0)
         ax.set_ylabel("accuracy over all option orders")
         ax.set_title(title, fontsize=10, loc="left")
@@ -264,8 +282,7 @@ def fig_c2(reasoned: dict, immediate: dict, out: Path) -> None:
     ax.set_ylim(-0.2, 0.4)
     ax.set_ylabel("reasoned minus immediate (fake items)")
     ax.set_title("Paired gain from reasoning, same items and orders", fontsize=10, loc="left")
-    if len(ax.lines) > 2:
-        ax.legend(frameon=False, fontsize=8)
+    ax.legend(frameon=False, fontsize=8)
     style(ax)
     ax = axes[1]
     for task, imm_task, name, color, marker, _ in TASKS:
@@ -287,10 +304,11 @@ def fig_c2(reasoned: dict, immediate: dict, out: Path) -> None:
             edgecolors="white",
             linewidths=0.6,
         )
-        for k in shared:
-            x, y = i["item_accuracy"][k], r["item_accuracy"][k]
-            if y - x < -0.15 or (x < 0.5 and y < 0.6):
-                ax.annotate(k, (x, y), xytext=(4, 4), textcoords="offset points", fontsize=6, color=INK2)
+        if task == TASKS[0][0]:  # label outliers once, on the 4-option task
+            for k in shared:
+                x, y = i["item_accuracy"][k], r["item_accuracy"][k]
+                if y - x < -0.15 or (x < 0.5 and y < 0.6):
+                    ax.annotate(k, (x, y), xytext=(4, 4), textcoords="offset points", fontsize=6, color=INK2)
     ax.plot([0, 1], [0, 1], color=INK2, lw=0.8, ls=(0, (3, 3)), zorder=1)
     ax.set_xlim(-0.03, 1.03)
     ax.set_ylim(-0.03, 1.03)
@@ -314,7 +332,7 @@ def main() -> None:
     reasoned = json.loads(args.reasoned.read_text(encoding="utf-8"))
     immediate = json.loads(args.immediate.read_text(encoding="utf-8")) if args.immediate else None
     args.out_dir.mkdir(parents=True, exist_ok=True)
-    fig_r1(reasoned, args.out_dir / "r1_reasoned_accuracy_abstention.png")
+    fig_r1(reasoned, args.out_dir / "r1_reasoned_accuracy_abstention.png", immediate)
     fig_r2(reasoned, args.out_dir / "r2_reasoning_length.png")
     fig_r3(reasoned, immediate, args.out_dir / "r3_think_by_category.png")
     written = 3
