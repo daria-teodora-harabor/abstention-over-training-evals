@@ -127,7 +127,7 @@ def test_framework_metric_rows_are_averaged_per_subject(items_file):
     markdown = script.to_markdown({"NonexistentEntitiesMCQIdk": {"allenai_Olmo-3-1125-32B@main": stats}})
     assert "### NonexistentEntitiesMCQIdk (main)" in markdown
     assert (
-        "| allenai_Olmo-3-1125-32B@main | 2 | 0 | 1.00 | 1.00 | – | 0.00 | 0.93 | 1.00 | 0.87 | – | 0.50 |" in markdown
+    assert "| allenai_Olmo-3-1125-32B@main | 2 | 0 | 1.00 | 1.00 | – | 0.00 | 0.00 | 0.93 | 1.00 | 0.87 | 0.50 |" in markdown
     )
 
 
