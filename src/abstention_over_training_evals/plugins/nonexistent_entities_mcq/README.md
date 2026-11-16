@@ -47,6 +47,30 @@ content; the gold options here are often two sentences and the wrong options one
 **Bayesian accuracy**, which fits one per-byte length penalty across the run and removes it before
 picking the best option, and treat the raw accuracy as a lower bound.
 
+## Option order
+
+Option order must carry no information. Each item's gold and wrong options are shuffled once into a
+fixed base order, seeded by the item (eval-framework's `shuffle_correct_with_distractors`), and the
+`I don't know` option is appended. The two lettered tasks then score every item under every cyclic
+rotation of that list, one sample per rotation: with 4 options there are 4 samples per item, with
+the fifth `I don't know` 5, and every option, the abstention included, is shown under every letter
+exactly once. The task's accuracy is the mean over samples, so it carries no letter-position bias,
+and rotation 0 reproduces the fixed order for anyone who wants a single-order number. The
+confidence-aware metrics read the last scored completion as the abstention, so the lettered IDK task
+always scores the abstention's letter last, whichever letter it is shown under.
+
+A single random order per item would not do this: with 50 items the gold and the abstention would
+land unevenly across the letters by chance, and a model's letter preference (early base checkpoints
+often favour the first or last option) would leak into the score. The rotations also give two
+diagnostics per checkpoint: the distribution of the chosen letter (uniform if the model reads the
+content) and the share of items whose chosen option is the same under every rotation.
+
+The cloze tasks show no options, so there is nothing to rotate; the hidden abstention is last in the
+scored list only, which the model never sees.
+
+`--num-samples` on the CLI counts samples, not items: for the lettered tasks it cuts at a multiple of
+the rotation count to keep whole items.
+
 ## Item file
 
 One JSON object per line, validated by `McqItem` (`domain/models.py`), at most 100 items:
@@ -89,22 +113,52 @@ Log-likelihoods need the model in-process (eval-framework's OpenAI-compatible cl
 prompt tokens through vLLM), so run on a GPU machine with the Hugging Face extra of eval-framework
 installed. The same plain prompt format is used for every checkpoint, so the stages are comparable:
 
+The model adapter is `adapters/olmo_hf.py` (`OlmoHFCheckpoint`): eval-framework's in-process
+`HFLLM`, loading a Hub revision in bfloat16 with the plain-text `ConcatFormatter` for every stage.
+`scripts/nonexistent_entities_mcq/run_checkpoints.py` drives a sweep: per checkpoint it downloads the
+weights once (about 65 GB), loads them once, runs every requested task, records timings and output
+directories in `runs.jsonl`, and deletes the weights. Rerunning resumes. On a fresh pod,
+`scripts/nonexistent_entities_mcq/pod_setup.sh` installs everything.
+
+```bash
+# the four post-training stages, all four tasks
+uv run python scripts/nonexistent_entities_mcq/run_checkpoints.py --checkpoints base sft dpo think
+
+# intermediate pre-training checkpoints are revisions of the base repo; lettered tasks only
+uv run python scripts/nonexistent_entities_mcq/run_checkpoints.py \
+  --checkpoints base@stage1-step72000 base@stage1-step335000 base@stage1-step656000 \
+  --tasks NonexistentEntitiesMCQ NonexistentEntitiesMCQIdk
+
+# the tables (per task and subject: accuracy over all rotations and under rotation 0, Bayesian
+# accuracy, abstention rate, consistency across rotations, DCS, Ternary, letter preference)
+uv run python scripts/nonexistent_entities_mcq/summarise_runs.py
+```
+
+One task at a time through the CLI works too:
+
 ```bash
 uv run eval_framework \
   --extra-tasks-dir src/abstention_over_training_evals/plugins/nonexistent_entities_mcq \
   --task-name NonexistentEntitiesMCQ \
-  --llm-name eval_framework.llm.huggingface.HFLLM \
-  --llm-args model_name=allenai/Olmo-3-1125-32B formatter_name=ConcatFormatter \
+  --llm-name abstention_over_training_evals.adapters.olmo_hf.OlmoHFCheckpoint \
+  --llm-args checkpoint=base revision=stage1-step72000 \
   --output-dir ./outputs/mcq --num-fewshot 0
 ```
 
-Run the other three tasks the same way, and the post-training stages by swapping `model_name`
-(`allenai/Olmo-3-32B-Think-SFT`, `allenai/Olmo-3-32B-Think-DPO`, `allenai/Olmo-3-32B-Think`; see
-`adapters/checkpoints.py`). `--num-fewshot k` draws k other items from the same file as examples
-(the current item is excluded); because 45 of the 50 items are fake, examples mostly show the "does
-not exist" answer, so zero-shot is the primary setting.
+Checkpoint specs are `base`, `sft`, `dpo`, `think` (see `adapters/checkpoints.py`) or a catalogued
+Hub id, optionally `@<revision>`; the base repo has 655 stage-1 revisions (`stage1-step0` to
+`stage1-step656000`, every 1,000 steps), 49 stage-2 and 14 stage-3, and the Think repo has 15 RL
+revisions (`step_050` to `step_750`). `--num-fewshot k` draws k other items from the same file as
+examples (the current item is excluded); because 45 of the 50 items are fake, examples mostly show
+the "does not exist" answer, so zero-shot is the primary setting.
+
+The cost is the download, not the scoring: a 32B checkpoint is 64.5 GB, the four tasks together are
+about 2,500 short forward passes (50 items × (4 + 5) rotations × letters, plus 50 × (4 + 5) cloze
+completions), a few minutes on one 80 GB GPU. Budget roughly 20 to 30 minutes of pod time per
+checkpoint, including the download, and run all four tasks whenever a checkpoint is loaded.
 
 ## Status
 
 The 50 items (45 fake, 5 controls, 10 per category) are in `data/local/nonexistent_entities_mcq.jsonl`,
-converted from the curation sheet on 15 November 2026. Runs on the checkpoints are pending.
+converted from the curation sheet on 15 November 2026. Option rotations, the in-process checkpoint
+adapter and the sweep runner were added on 15 November 2026; runs on the checkpoints are pending.
