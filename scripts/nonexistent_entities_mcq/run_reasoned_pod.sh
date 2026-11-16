@@ -20,14 +20,15 @@ for spec in "$@"; do
   read -r MODEL REV LABEL <<<"$(uv run --no-sync python -c "
 import sys; sys.path.insert(0, 'src')
 from abstention_over_training_evals.adapters.olmo_weights import parse_checkpoint, checkpoint_label
-c = parse_checkpoint('$spec'); print(c.model_id, c.revision, checkpoint_label(c))")"
+c = parse_checkpoint(sys.argv[1]); print(c.model_id, c.revision, checkpoint_label(c))" "$spec")"
+  if [ -z "${LABEL:-}" ]; then echo "bad checkpoint spec: $spec" | tee -a "$OUT/runs.log"; continue; fi
   if grep -q "^$LABEL $TASK ok" "$OUT/runs.log" 2>/dev/null; then echo "[$(date -u +%H:%M:%S)] skip $LABEL $TASK (done)"; continue; fi
   echo "[$(date -u +%H:%M:%S)] $LABEL: starting vllm serve $MODEL --revision $REV"
   vllm serve "$MODEL" --revision "$REV" --reasoning-parser olmo3 --max-model-len 20480 --max-num-seqs 256 \
     --gpu-memory-utilization 0.92 --port 8000 --served-model-name "$MODEL" > "$OUT/vllm_${LABEL}.log" 2>&1 &
   VPID=$!
   up=0
-  for _ in $(seq 1 180); do
+  for _ in $(seq 1 600); do
     if curl -sf http://127.0.0.1:8000/health >/dev/null 2>&1; then up=1; break; fi
     if ! kill -0 "$VPID" 2>/dev/null; then break; fi
     sleep 10
@@ -44,14 +45,20 @@ c = parse_checkpoint('$spec'); print(c.model_id, c.revision, checkpoint_label(c)
     --extra-tasks-dir src/abstention_over_training_evals/plugins/nonexistent_entities_mcq_reasoned \
     --task-name "$TASK" \
     --llm-name abstention_over_training_evals.adapters.olmo_vllm.Olmo3Think32B \
-    --llm-args base_url=http://127.0.0.1:8000/v1 api_key=EMPTY "model_name=$MODEL" timeout=3600 \
+    --llm-args base_url=http://127.0.0.1:8000/v1 api_key=EMPTY "model_name=$MODEL" timeout=3600 max_workers=256 \
     --output-dir "$OUT/$LABEL" --num-fewshot 0 --batch-size "$BATCH" --max-tokens "$MAX_TOKENS" \
     > "$OUT/eval_${LABEL}_${TASK}.log" 2>&1
   rc=$?
   secs=$(( $(date +%s) - t0 ))
   if [ $rc -eq 0 ]; then echo "$LABEL $TASK ok $secs" >> "$OUT/runs.log"; else echo "$LABEL $TASK error rc=$rc $secs" >> "$OUT/runs.log"; fi
   echo "[$(date -u +%H:%M:%S)] $LABEL $TASK: rc=$rc in ${secs}s"
-  kill "$VPID" 2>/dev/null; wait "$VPID" 2>/dev/null; sleep 5
+  kill "$VPID" 2>/dev/null; wait "$VPID" 2>/dev/null
+  pkill -f "vllm serve" 2>/dev/null
+  for _ in $(seq 1 24); do  # wait for the engine to release the GPU before the next server starts
+    used=$(nvidia-smi --query-gpu=memory.used --format=csv,noheader,nounits | head -1)
+    [ "${used:-99999}" -lt 2000 ] && break
+    sleep 5
+  done
 done
 echo "[$(date -u +%H:%M:%S)] ALL DONE for $TASK: $*"
 echo "ALL DONE $TASK" >> "$OUT/runs.log"
