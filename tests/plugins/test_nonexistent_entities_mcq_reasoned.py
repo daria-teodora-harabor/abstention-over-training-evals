@@ -88,6 +88,11 @@ def _options(text):
         ("**C is the best choice** here.", "C"),
         ("The answer is B. Wait, rereading the options... **Final answer: D**", "D"),
         ("D\n\nThe answer is D because the article does not exist.", "D"),
+        ("- **Option D (Hectavaratin does not exist)**: This is the correct choice.", "D"),
+        (
+            "- **A. I don't know**: not helpful\n- **B. 10 mg**: wrong\n- **C. 5 mg**: wrong\n- **E. none**: correct",
+            None,
+        ),
         ("Option B looks tempting but the answer is A", "A"),
         ("A quick note: none of these.", None),
         ("The answer depends on the dose.", None),

@@ -82,6 +82,8 @@ def summarise_run(records: list[dict[str, Any]], immediate_items: dict[str, floa
         tokens_correct: list[float] = []
         tokens_wrong: list[float] = []
         answer_chars: list[float] = []
+        trace_correct: list[float] = []
+        trace_wrong: list[float] = []
         by_item: dict[str, list[float]] = defaultdict(list)
         letters: dict[str, int] = defaultdict(int)
         for r in rows:
@@ -110,6 +112,11 @@ def summarise_run(records: list[dict[str, Any]], immediate_items: dict[str, floa
                 tokens.append(float(n_tok))
                 (tokens_correct if ok else tokens_wrong).append(float(n_tok))
             answer_chars.append(float(len(r.get("completion") or "")))
+            if n_tok is not None and r.get("raw_completion_finish_reason") != "length":
+                # Trace length proper: generated tokens minus the answer (about 4 chars per token),
+                # over traces that reached an answer.
+                trace = max(0.0, float(n_tok) - len(r.get("completion") or "") / 4)
+                (trace_correct if ok else trace_wrong).append(trace)
         item_acc = {k: sum(v) / len(v) for k, v in sorted(by_item.items())}
         stats: dict[str, Any] = {
             "n_answers": len(rows),
@@ -128,6 +135,8 @@ def summarise_run(records: list[dict[str, Any]], immediate_items: dict[str, floa
             "reasoning_tokens_mean_wrong": _mean(tokens_wrong),
             "reasoning_tokens_median_correct": statistics.median(tokens_correct) if tokens_correct else None,
             "reasoning_tokens_median_wrong": statistics.median(tokens_wrong) if tokens_wrong else None,
+            "trace_tokens_median_correct": statistics.median(trace_correct) if trace_correct else None,
+            "trace_tokens_median_wrong": statistics.median(trace_wrong) if trace_wrong else None,
             # Generated tokens include the answer after the trace; its length is reported so the two
             # can be told apart (early checkpoints explain at length after answering).
             "answer_chars_median": statistics.median(answer_chars) if answer_chars else None,
