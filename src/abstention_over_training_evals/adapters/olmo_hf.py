@@ -89,7 +89,9 @@ def fast_single_token_logprobs(llm: BaseHFLLM, samples: list[Sample], batch_size
             attention[row, : lengths[row]] = 1
         with torch.no_grad():
             out = llm.model(input_ids=input_ids.to(llm.device), attention_mask=attention.to(llm.device))
-            last = out.logits[torch.arange(len(batch)), torch.tensor(lengths) - 1, :].float()
+            rows = torch.arange(len(batch), device=out.logits.device)
+            last_positions = torch.tensor(lengths, device=out.logits.device) - 1
+            last = out.logits[rows, last_positions, :].float()
             logp = torch.log_softmax(last, dim=-1)
         for row, i in enumerate(batch):
             sample, completions = samples[i], samples[i].possible_completions or []
