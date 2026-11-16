@@ -11,8 +11,10 @@ sample is) to report, per checkpoint, task and subject:
 - the framework's metrics averaged over all samples, i.e. over all option orders (raw and Bayesian,
   length-corrected, accuracy; DCS and Ternary on the IDK tasks). The framework's DCS divides each
   log-likelihood by the completion's length before the softmax (a temperature-2 softmax on the
-  one-letter completions), so an untempered DCS from the raw log-likelihoods is reported alongside
-  (``dcs_raw``: (p_gold - p_wrong) x (1 - p_abstain), Burns 2025), with the mean probability on the gold;
+  one-letter completions) and, in eval-framework 0.14.2, looks the abstention up under a normalised
+  key that never matches, so its (1 - p_abstain) factor is always 1. The table therefore shows
+  ``dcs_raw`` instead: Burns' (p_gold - p_wrong) x (1 - p_abstain) on the raw softmax (the framework's
+  value stays in summary.json under metrics), with the mean probability on the gold;
 - accuracy under order 0 only: the fixed order, what a single-order run would have reported;
 - abstention rate: how often the argmax completion is "I don't know";
 - consistency: the share of items whose chosen option (by content) is the same under every order;
@@ -59,6 +61,24 @@ def _mean(values: list[float]) -> float | None:
     return sum(values) / len(values) if values else None
 
 
+def _length_decay(responses: list[dict[str, Any]]) -> float:
+    """eval-framework's Bayesian length correction, Eq. 24 of arXiv:2607.12767: one slope per run."""
+    numerator = denominator = 0.0
+    for response in responses:
+        lls = response.get("loglikelihoods") or {}
+        if response.get("error") or len(lls) <= 1:
+            continue
+        lengths = [len(c.encode("utf-8")) for c in lls]
+        values = list(lls.values())
+        mean_len, mean_ll = sum(lengths) / len(lengths), sum(values) / len(values)
+        local = len(lls) * sum((n - mean_len) ** 2 for n in lengths)
+        if local == 0:
+            continue
+        numerator += len(lls) * sum((n - mean_len) * (v - mean_ll) for n, v in zip(lengths, values))
+        denominator += local
+    return 0.0 if denominator == 0 else numerator / denominator
+
+
 def _softmax(loglikelihoods: dict[str, float]) -> dict[str, float]:
     top = max(loglikelihoods.values())
     weights = {k: math.exp(v - top) for k, v in loglikelihoods.items()}
@@ -74,6 +94,7 @@ def summarise_run(
 ) -> dict[str, dict[str, Any]]:
     """Per-subject statistics of one run from its responses, metric rows and the task's manifest."""
     lettered = "Cloze" not in task_name
+    length_decay = _length_decay(responses)
     per_subject: dict[str, dict[str, Any]] = {}
     by_subject: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for response in responses:
@@ -90,6 +111,8 @@ def summarise_run(
         abstained: list[float] = []
         dcs_raw: list[float] = []
         p_gold: list[float] = []
+        correct_bayes: list[float] = []
+        abstained_bayes: list[float] = []
         letters: Counter[str] = Counter()
         chosen_by_item: dict[str, list[str]] = defaultdict(list)
         errors = 0
@@ -112,6 +135,10 @@ def summarise_run(
             if row["order"] == 0:
                 correct_order0.append(is_correct)
             abstained.append(float(row["abstention"] is not None and chosen == row["abstention"]))
+            corrected = {c: ll - length_decay * len(c.encode("utf-8")) for c, ll in loglikelihoods.items()}
+            chosen_bayes = max(corrected, key=corrected.get)
+            correct_bayes.append(float(chosen_bayes == row["gold"]))
+            abstained_bayes.append(float(row["abstention"] is not None and chosen_bayes == row["abstention"]))
             probs = _softmax(loglikelihoods)
             p_c = probs.get(row["gold"], 0.0)
             p_idk = probs.get(row["abstention"], 0.0) if row["abstention"] is not None else 0.0
@@ -133,6 +160,9 @@ def summarise_run(
             "accuracy_all_orders": _mean(correct),
             "accuracy_order_0": _mean(correct_order0),
             "abstention_rate": _mean(abstained),
+            "accuracy_bayesian_recomputed": _mean(correct_bayes),
+            "abstention_rate_bayesian": _mean(abstained_bayes),
+            "length_decay": length_decay,
             "dcs_raw": _mean(dcs_raw),
             "p_gold": _mean(p_gold),
             # One order only for the cloze tasks, so consistency across orders is undefined there.
@@ -187,7 +217,7 @@ def to_markdown(summary: dict[str, Any]) -> str:
             lines.append(f"### {task_name} ({subject})\n")
             lines.append(
                 "| checkpoint | items | errors | acc (all orders) | acc (order 0) | Bayesian acc | abstain | "
-                "p(gold) | consistency | DCS raw | DCS (fw) | Ternary | letter preference |"
+                "abstain (Bayes) | p(gold) | consistency | DCS | Ternary | letter preference |"
             )
             lines.append("|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|")
             for checkpoint, stats in by_checkpoint.items():
@@ -199,9 +229,9 @@ def to_markdown(summary: dict[str, Any]) -> str:
                 lines.append(
                     f"| {checkpoint} | {s.get('n_items', '–')} | {s.get('errors', '–')} | {_fmt(s.get('accuracy_all_orders'))} | "
                     f"{_fmt(s.get('accuracy_order_0'))} | {_fmt(m.get('Accuracy Bayesian Loglikelihood'))} | "
-                    f"{_fmt(s.get('abstention_rate'))} | {_fmt(s.get('p_gold'))} | {_fmt(s.get('consistency'))} | "
-                    f"{_fmt(s.get('dcs_raw'))} | {_fmt(m.get('Distributional Correctness Score'))} | "
-                    f"{_fmt(m.get('Ternary Score'))} | {pref} |"
+                    f"{_fmt(s.get('abstention_rate'))} | {_fmt(s.get('abstention_rate_bayesian'))} | "
+                    f"{_fmt(s.get('p_gold'))} | {_fmt(s.get('consistency'))} | "
+                    f"{_fmt(s.get('dcs_raw'))} | {_fmt(m.get('Ternary Score'))} | {pref} |"
                 )
             lines.append("")
     return "\n".join(lines)
