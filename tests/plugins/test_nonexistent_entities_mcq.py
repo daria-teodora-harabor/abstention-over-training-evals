@@ -13,9 +13,17 @@ from eval_framework.tasks.registry import Registry  # noqa: E402
 from abstention_over_training_evals.plugins.nonexistent_entities_mcq.nonexistent_entities_mcq import (  # noqa: E402
     IDK_OPTION,
     NonexistentEntitiesMCQ,
+    NonexistentEntitiesMCQCloze,
+    NonexistentEntitiesMCQClozeIdk,
     NonexistentEntitiesMCQIdk,
     register_tasks,
 )
+
+GOLDS = {
+    "There is no medicine called hetinopril.",
+    "There is no Article 313 in the NEC.",
+    "At 25 mg daily, increased slowly.",
+}
 
 _OPTION_LINE = re.compile(r"^([A-Z])\. (.*)$")
 
@@ -69,8 +77,8 @@ def items_file(tmp_path, monkeypatch):
         + "\n",
         encoding="utf-8",
     )
-    monkeypatch.setenv("AOTE_PROMPTS_PATH__NonexistentEntitiesMCQ", str(f))
-    monkeypatch.setenv("AOTE_PROMPTS_PATH__NonexistentEntitiesMCQIdk", str(f))
+    for name in ("MCQ", "MCQIdk", "MCQCloze", "MCQClozeIdk"):
+        monkeypatch.setenv(f"AOTE_PROMPTS_PATH__NonexistentEntities{name}", str(f))
     return f
 
 
@@ -162,8 +170,50 @@ def test_empty_or_missing_item_file_is_an_actionable_error(tmp_path, monkeypatch
         list(_task(NonexistentEntitiesMCQ).iterate_samples())
 
 
-def test_register_tasks_registers_both_variants():
+def test_cloze_variant_shows_only_the_question_and_scores_the_option_texts(items_file):
+    task = _task(NonexistentEntitiesMCQCloze)
+    samples = list(task.iterate_samples())
+    assert len(samples) == 3
+    assert task.get_response_type() is ResponseType.LOGLIKELIHOODS
+    for sample in samples:
+        user, cue = sample.messages
+        assert user.content.startswith("Question: ")
+        assert _options(sample) == []  # no lettered options in the prompt
+        assert cue.content == "Answer:"
+        assert len(sample.possible_completions) == 4
+        assert all(c.startswith(" ") for c in sample.possible_completions)
+        assert sample.ground_truth in sample.possible_completions
+        assert sample.ground_truth[1:] in GOLDS
+    assert DistributionalCorrectnessScore not in NonexistentEntitiesMCQCloze.get_metrics()
+
+
+def test_cloze_idk_variant_scores_a_hidden_abstention_last(items_file):
+    task = _task(NonexistentEntitiesMCQClozeIdk)
+    for sample in task.iterate_samples():
+        assert len(sample.possible_completions) == 5
+        assert sample.possible_completions[-1] == f" {IDK_OPTION}"
+        assert sample.ground_truth != f" {IDK_OPTION}"
+        assert IDK_OPTION not in sample.messages[0].content  # hidden, not shown
+    metrics = NonexistentEntitiesMCQClozeIdk.get_metrics()
+    assert DistributionalCorrectnessScore in metrics
+    assert TernaryScore in metrics
+    assert task.get_metadata()["abstention_option"] == IDK_OPTION
+    assert _task(NonexistentEntitiesMCQCloze).get_metadata()["abstention_option"] == ""
+
+
+def test_cloze_variants_score_the_options_in_the_lettered_order(items_file):
+    def scored_texts(cls):
+        return [[c[1:] for c in s.possible_completions] for s in _task(cls).iterate_samples()]
+
+    lettered = [_options(s) for s in _task(NonexistentEntitiesMCQ).iterate_samples()]
+    cloze = scored_texts(NonexistentEntitiesMCQCloze)
+    cloze_idk = scored_texts(NonexistentEntitiesMCQClozeIdk)
+    assert cloze == lettered
+    assert [c[:4] for c in cloze_idk] == lettered
+
+
+def test_register_tasks_registers_all_four_variants():
     registry = Registry()
     register_tasks(registry)
-    assert "NonexistentEntitiesMCQ" in registry
-    assert "NonexistentEntitiesMCQIdk" in registry
+    for name in ("MCQ", "MCQIdk", "MCQCloze", "MCQClozeIdk"):
+        assert f"NonexistentEntities{name}" in registry

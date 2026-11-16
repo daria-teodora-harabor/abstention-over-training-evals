@@ -4,10 +4,11 @@
     uv run python scripts/nonexistent_entities_mcq/sheet_to_jsonl.py <mcq.csv> \\
         [--out data/local/nonexistent_entities_mcq.jsonl] [--min-wrong 3]
 
-Columns are matched by the start of their header, so the "(EDIT ...)" notes in the sheet are fine:
-``id``, ``category``, ``control``, ``mcq_question``, ``gold_option``, ``wrong_option_1`` and up, and
-optionally ``idk_option`` (checked against the task's own abstention text; it is not written to the
-file, the task adds it). Rows with an empty id are skipped. Every kept row needs a question, a gold
+Columns are matched by the start of their header (case, spaces and underscores do not matter, so both
+the workbook's original headers and the sheet's renamed ones work): ``id``, ``category``, ``control``,
+the question (``Edited questions`` or ``mcq_question``), ``Gold option``, ``Wrong option 1`` and up,
+and optionally ``IDK option`` (checked against the task's own abstention text; it is not written to
+the file, the task adds it). Rows with an empty id are skipped. Every kept row needs a question, a gold
 option and at least ``--min-wrong`` distinct wrong options; all problems are listed and nothing is
 written if there is any. Short category slugs (``pharma``, ``peds``, ``elec``, ``osha``, ``proc``) are
 expanded to the category names used by the generative task.
@@ -38,9 +39,17 @@ CATEGORY_NAMES = {
 TRUE_WORDS = {"yes", "y", "true", "1", "x"}
 
 
-def _column(headers: list[str], prefix: str) -> str | None:
-    matches = [h for h in headers if h.strip().lower().startswith(prefix)]
-    return matches[0] if matches else None
+def _key(header: str) -> str:
+    """Normalise a header for matching: lower case, underscores as spaces, single spaces."""
+    return " ".join(header.replace("_", " ").split()).lower()
+
+
+def _column(headers: list[str], *prefixes: str) -> str | None:
+    for prefix in prefixes:
+        matches = [h for h in headers if _key(h).startswith(prefix)]
+        if matches:
+            return matches[0]
+    return None
 
 
 def _clean(value: str | None) -> str:
@@ -54,12 +63,18 @@ def convert(csv_path: Path, min_wrong: int) -> tuple[list[dict[str, object]], li
         headers = list(reader.fieldnames or [])
         records = list(reader)
 
-    col = {name: _column(headers, name) for name in ("id", "category", "control", "mcq_question", "gold_option")}
-    wrong_cols = sorted(h for h in headers if h.strip().lower().startswith("wrong_option_"))
-    idk_col = _column(headers, "idk_option")
-    problems = [f"missing column starting with {name!r}" for name, found in col.items() if found is None]
+    col = {
+        "id": _column(headers, "id"),
+        "category": _column(headers, "category"),
+        "control": _column(headers, "control"),
+        "question": _column(headers, "edited question", "mcq question"),
+        "gold": _column(headers, "gold option"),
+    }
+    wrong_cols = sorted((h for h in headers if _key(h).startswith("wrong option")), key=_key)
+    idk_col = _column(headers, "idk option")
+    problems = [f"missing column for {name!r}" for name, found in col.items() if found is None]
     if not wrong_cols:
-        problems.append("missing wrong_option_* columns")
+        problems.append("missing 'Wrong option N' columns")
     if problems:
         return [], problems
 
@@ -76,14 +91,14 @@ def convert(csv_path: Path, min_wrong: int) -> tuple[list[dict[str, object]], li
         category = _clean(rec.get(col["category"] or ""))
         category = CATEGORY_NAMES.get(category, category)
         control = _clean(rec.get(col["control"] or "")).lower() in TRUE_WORDS
-        question = _clean(rec.get(col["mcq_question"] or ""))
-        gold = _clean(rec.get(col["gold_option"] or ""))
+        question = _clean(rec.get(col["question"] or ""))
+        gold = _clean(rec.get(col["gold"] or ""))
         wrong = [w for w in (_clean(rec.get(c)) for c in wrong_cols) if w]
         if len(wrong) < min_wrong:
             problems.append(f"{where}: {len(wrong)} wrong option(s), need {min_wrong}")
             continue
         if idk_col and _clean(rec.get(idk_col)) not in ("", IDK_OPTION):
-            problems.append(f"{where}: idk_option is {_clean(rec.get(idk_col))!r}; the task uses {IDK_OPTION!r}")
+            problems.append(f"{where}: IDK option is {_clean(rec.get(idk_col))!r}; the task uses {IDK_OPTION!r}")
         payload: dict[str, object] = {
             "id": item_id,
             "category": category or None,
