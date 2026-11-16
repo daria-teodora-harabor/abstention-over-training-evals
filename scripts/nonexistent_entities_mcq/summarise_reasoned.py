@@ -81,6 +81,7 @@ def summarise_run(records: list[dict[str, Any]], immediate_items: dict[str, floa
         tokens: list[float] = []
         tokens_correct: list[float] = []
         tokens_wrong: list[float] = []
+        answer_chars: list[float] = []
         by_item: dict[str, list[float]] = defaultdict(list)
         letters: dict[str, int] = defaultdict(int)
         for r in rows:
@@ -108,6 +109,7 @@ def summarise_run(records: list[dict[str, Any]], immediate_items: dict[str, floa
             if n_tok is not None:
                 tokens.append(float(n_tok))
                 (tokens_correct if ok else tokens_wrong).append(float(n_tok))
+            answer_chars.append(float(len(r.get("completion") or "")))
         item_acc = {k: sum(v) / len(v) for k, v in sorted(by_item.items())}
         stats: dict[str, Any] = {
             "n_answers": len(rows),
@@ -124,6 +126,11 @@ def summarise_run(records: list[dict[str, Any]], immediate_items: dict[str, floa
             "reasoning_tokens_max": max(tokens) if tokens else None,
             "reasoning_tokens_mean_correct": _mean(tokens_correct),
             "reasoning_tokens_mean_wrong": _mean(tokens_wrong),
+            "reasoning_tokens_median_correct": statistics.median(tokens_correct) if tokens_correct else None,
+            "reasoning_tokens_median_wrong": statistics.median(tokens_wrong) if tokens_wrong else None,
+            # Generated tokens include the answer after the trace; its length is reported so the two
+            # can be told apart (early checkpoints explain at length after answering).
+            "answer_chars_median": statistics.median(answer_chars) if answer_chars else None,
             "item_accuracy": item_acc,
         }
         if immediate_items:
@@ -166,9 +173,9 @@ def to_markdown(summary: dict[str, Any]) -> str:
             lines.append(f"### {task} ({subject})\n")
             lines.append(
                 "| checkpoint | answers | items | errors | accuracy [95% CI] | immediate | paired diff [95% CI] | "
-                "abstain | unparseable | tokens median / mean (correct / wrong) | letters |"
+                "abstain | unparseable | truncated | tokens median (correct / wrong) | answer chars | letters |"
             )
-            lines.append("|---|---:|---:|---:|---|---:|---|---:|---:|---|---|")
+            lines.append("|---|---:|---:|---:|---|---:|---|---:|---:|---:|---|---:|---|")
             for label, stats in by_label.items():
                 s = stats.get(subject)
                 if not s:
@@ -180,8 +187,9 @@ def to_markdown(summary: dict[str, Any]) -> str:
                     f"| {label} | {s['n_answers']} | {s['n_items']} | {s['errors']} | "
                     f"{_fmt(s['accuracy'])} [{_fmt(ci[0])}, {_fmt(ci[1])}] | {_fmt(s.get('immediate_accuracy'))} | "
                     f"{_fmt(s.get('paired_difference'))} [{_fmt(dci[0])}, {_fmt(dci[1])}] | {_fmt(s['abstention_rate'])} | "
-                    f"{_fmt(s['unparseable_rate'])} | {_fmt(s['reasoning_tokens_median'])} / {_fmt(s['reasoning_tokens_mean'])} "
-                    f"({_fmt(s['reasoning_tokens_mean_correct'])} / {_fmt(s['reasoning_tokens_mean_wrong'])}) | {pref} |"
+                    f"{_fmt(s['unparseable_rate'])} | {_fmt(s.get('truncated_rate'))} | {_fmt(s['reasoning_tokens_median'])} "
+                    f"({_fmt(s.get('reasoning_tokens_median_correct'))} / {_fmt(s.get('reasoning_tokens_median_wrong'))}) | "
+                    f"{_fmt(s.get('answer_chars_median'))} | {pref} |"
                 )
             lines.append("")
     return "\n".join(lines)

@@ -35,22 +35,39 @@ INSTRUCTION = "Answer with the letter of the best option."
 MAX_TOKENS = 16384
 _ITEMS_FILENAME = "nonexistent_entities_mcq.jsonl"
 
-# The letter an answer settles on: "Answer: C", "the answer is **C**", or a letter that opens a line
-# or a bold span and is followed by punctuation, a closing bold or the end ("C", "C.", "**B**",
-# "**A. 25 mg**"); a line-opening "A " as the English article does not count. The last match wins, so
-# an answer that weighs options and then concludes is read at its conclusion.
-_LETTER_RE = re.compile(
-    r"(?:answer\s*(?:is|:)?\s*\**\s*\(?(?-i:([A-E]))\)?(?![A-Za-z])|(?:^|\*\*)\s*\(?(?-i:([A-E]))\)?(?:[.):]|\*\*|$))",
-    re.IGNORECASE | re.MULTILINE,
+# The letter an answer settles on. Tiers, in order: an explicit "final answer: X" (the last one wins,
+# since a model that reverses itself ends on its final answer); the first explicit answer phrase
+# ("the answer is **X", "best option: X", "**X is the best choice**", "option X is the most accurate"),
+# first because many checkpoints restate the other options in bold after answering; then a letter that
+# opens the text or a line, bare or followed by punctuation ("C", "C.", "**B**", "**A. 25 mg**"). A
+# line-opening "A " as the English article does not count, nor does a letter followed by letters.
+_FINAL_RE = re.compile(r"final\s+answer\s*(?:is|:)?\s*\**\s*\(?(?-i:([A-E]))\)?(?![A-Za-z])", re.IGNORECASE)
+_EXPLICIT_RE = re.compile(
+    r"(?:answer|best option|correct option|best choice|correct choice|right answer)\**\s*(?:is|:|would be|should be)?"
+    r"\s*\**\s*\(?(?-i:([A-E]))\)?(?![A-Za-z])"
+    r"|option\s+\**(?-i:([A-E]))\**\s+(?:is|as|,)?\s*(?:the\s+)?(?:best|correct|most|right)"
+    r"|\*\*(?-i:([A-E]))\s+is\s+the\s+(?:best|correct|right)",
+    re.IGNORECASE,
 )
+_LEADING_RE = re.compile(r"(?:^|\*\*)\s*\(?(?-i:([A-E]))\)?(?:[.):]|\*\*|$)", re.MULTILINE)
+
+
+def _first_group(match: re.Match[str]) -> str:
+    return next(g for g in match.groups() if g).upper()
 
 
 def parse_letter(answer: str | None) -> str | None:
     """The option letter an answer settles on, or ``None`` when there is none."""
     if not answer:
         return None
-    found = [next(g for g in m.groups() if g) for m in _LETTER_RE.finditer(answer)]
-    return found[-1].upper() if found else None
+    finals = list(_FINAL_RE.finditer(answer))
+    if finals:
+        return _first_group(finals[-1])
+    explicit = _EXPLICIT_RE.search(answer)
+    if explicit:
+        return _first_group(explicit)
+    leading = _LEADING_RE.search(answer)
+    return _first_group(leading) if leading else None
 
 
 class McqReasonedContext(BaseMetricContext):
