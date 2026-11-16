@@ -33,7 +33,8 @@ class Olmo3Think32B(OpenAIModel):
 
     Defaults use the model card's recommended sampling. ``base_url`` and ``api_key`` come from
     ``--llm-args`` (for a local server, ``api_key=EMPTY``). To evaluate an earlier checkpoint, serve
-    that checkpoint and override ``model_name``.
+    that checkpoint and override ``model_name``. ``timeout`` (seconds) raises the per-request limit for
+    long reasoning traces.
     """
 
     LLM_NAME = "allenai/Olmo-3-32B-Think"
@@ -45,6 +46,7 @@ class Olmo3Think32B(OpenAIModel):
         top_p: float | None = None,
         api_key: str | None = None,
         base_url: str | None = None,
+        timeout: float | None = None,
     ) -> None:
         super().__init__(
             model_name=model_name,
@@ -53,3 +55,6 @@ class Olmo3Think32B(OpenAIModel):
             api_key=api_key,
             base_url=base_url,
         )
+        if timeout is not None:
+            # A long reasoning trace can take longer than the client library's default of 600 s.
+            self._client = self._client.with_options(timeout=float(timeout))
