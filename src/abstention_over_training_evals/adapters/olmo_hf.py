@@ -53,6 +53,9 @@ def single_token_ids(llm: BaseHFLLM, prompt: str, completions: list[str]) -> lis
         joint = llm.tokenizer.encode(f"{prompt}{completion}", add_special_tokens=False)
         if len(joint) != len(prompt_ids) + 1 or joint[: len(prompt_ids)] != prompt_ids:
             return None
+        # The reference scores the last len(encode(completion)) joint tokens; keep that count at one.
+        if len(llm.tokenizer.encode(completion, add_special_tokens=False)) != 1:
+            return None
         ids.append(joint[-1])
     return ids
 
@@ -89,7 +92,9 @@ def fast_single_token_logprobs(llm: BaseHFLLM, samples: list[Sample], batch_size
             input_ids[row, : lengths[row]] = torch.tensor(prompt_ids[i], dtype=torch.long)
             attention[row, : lengths[row]] = 1
         with torch.no_grad():
-            out = llm.model(input_ids=input_ids.to(llm.device), attention_mask=attention.to(llm.device))
+            out = llm.model(
+                input_ids=input_ids.to(llm.device), attention_mask=attention.to(llm.device), use_cache=False
+            )
             rows = torch.arange(len(batch), device=out.logits.device)
             last_positions = torch.tensor(lengths, device=out.logits.device) - 1
             last = out.logits[rows, last_positions, :].float()
