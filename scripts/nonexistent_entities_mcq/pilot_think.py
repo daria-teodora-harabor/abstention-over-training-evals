@@ -26,7 +26,7 @@ sys.path.insert(0, str(REPO / "src"))
 
 INSTRUCTION = "Answer with the letter of the best option."
 LETTER_RE = re.compile(
-    r"(?:answer\s*(?:is|:)?\s*\**\s*\(?([A-E])\)?|^\s*\(?([A-E])\)?[.):\s]|\*\*([A-E])\*\*)", re.I | re.M
+    r"(?:answer\s*(?:is|:)?\s*\**\s*\(?([A-E])\)?|^\s*\(?([A-E])\)?(?:[.):\s]|$)|\*\*([A-E])\*\*)", re.I | re.M
 )
 
 
@@ -112,6 +112,7 @@ def main(argv: list[str] | None = None) -> int:
                 gen = gen[gen != tok.pad_token_id]
                 completion = tok.decode(gen, skip_special_tokens=False)
                 think, sep, answer = completion.partition("</think>")
+                answer = answer.replace(tok.eos_token, "")
                 record = {
                     **p,
                     "condition": "reasoned",
