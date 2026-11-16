@@ -187,18 +187,27 @@ class LocalJsonlMcqTask(BaseTask[str]):
     """Base class for log-likelihood multiple-choice tasks backed by a local JSONL item file.
 
     The base-model analogue of :class:`LocalJsonlSafetyTask`. Subclasses set ``NAME``,
-    ``PROMPTS_FILENAME`` (the file under ``data/local/``) and ``TASK_STYLER`` (``MCStyle()`` for a
-    plain multiple-choice task, :class:`MCStyleWithShownAbstention` with ``ABSTENTION_OPTION`` set
-    to also offer an abstention). Each item's gold answer and distractors are shuffled into a fixed
-    order (seeded by the item id and question, so the plain and abstention variants of a task show
-    the same order) and the model is scored on the letters. Items are reported under two subjects:
-    ``main`` and, when the file has any, ``control`` (items about real entities).
+    ``PROMPTS_FILENAME`` (the file under ``data/local/``) and ``TASK_STYLER``:
+
+    - ``MCStyle()`` shows the options as lettered lines and scores the letters;
+      :class:`MCStyleWithShownAbstention` with ``ABSTENTION_OPTION`` set also offers a visible
+      abstention as the last letter.
+    - ``ClozeStyle()`` shows the question alone and scores each option's text;
+      ``ClozeStyle().with_abstention_option(" ...")`` with ``SCORED_ABSTENTION`` set also scores a
+      hidden abstention completion after the options (eval-framework's ``IdkStyle``).
+
+    Each item's gold answer and distractors are shuffled into a fixed order (seeded by the item id and
+    question, so every variant of a task scores the same order). Items are reported under two
+    subjects: ``main`` and, when the file has any, ``control`` (items about real entities).
     """
 
     # Set by subclasses.
     PROMPTS_FILENAME: str = ""
     # When set, shown as the last lettered option of every item (the model can abstain by letter).
     ABSTENTION_OPTION: str | None = None
+    # When set, the abstention text that ``TASK_STYLER`` scores as a hidden extra completion
+    # (cloze tasks); recorded in the metadata only, the styler adds the completion itself.
+    SCORED_ABSTENTION: str | None = None
 
     SAMPLE_SPLIT = "test"
     FEWSHOT_SPLIT = "test"
@@ -267,7 +276,7 @@ class LocalJsonlMcqTask(BaseTask[str]):
         meta["control_count"] = str(sum(1 for item in items if item.control))
         meta["prompt_author_types"] = sorted({item.provenance.author_type.value for item in items})
         meta["prompt_categories"] = sorted({item.category for item in items if item.category})
-        meta["abstention_option"] = type(self).ABSTENTION_OPTION or ""
+        meta["abstention_option"] = type(self).ABSTENTION_OPTION or type(self).SCORED_ABSTENTION or ""
         return meta
 
     def _get_raw_question(self, item: dict[str, Any]) -> str:

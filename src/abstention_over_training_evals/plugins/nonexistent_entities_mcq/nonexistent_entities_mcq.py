@@ -9,19 +9,25 @@ second fabricated specific, a silent substitution by a real neighbour), in a fix
 Five real-entity controls, whose gold answer is a true specific, check that a model cannot score well
 by always choosing the "does not exist" option.
 
-Two tasks read the same item file ``data/local/nonexistent_entities_mcq.jsonl``:
+Four tasks read the same item file ``data/local/nonexistent_entities_mcq.jsonl``, in the two
+formulations OLMES (Gu et al., 2024, arXiv:2406.08446, section 2.1) recommends evaluating side by side:
 
-- ``NonexistentEntitiesMCQ``: the four options above, scored by accuracy over the letters.
-- ``NonexistentEntitiesMCQIdk``: the same items with a fifth, visible option ``E. I don't know``, so a
-  model can abstain by letter; scored with the confidence-aware metrics as well (Distributional
-  Correctness Score, Ternary Score), which treat that last option as the abstention.
+- ``NonexistentEntitiesMCQ``: multiple-choice formulation, the four options shown as lettered lines and
+  the letters scored.
+- ``NonexistentEntitiesMCQIdk``: the same with a fifth, visible option ``E. I don't know``, so a model
+  can abstain by letter; scored with the confidence-aware metrics as well (Distributional Correctness
+  Score, Ternary Score), which treat that last option as the abstention.
+- ``NonexistentEntitiesMCQCloze``: cloze formulation, the question alone shown and each option's text
+  scored. Option length matters here, so the Bayesian (length-corrected) accuracy is the one to read.
+- ``NonexistentEntitiesMCQClozeIdk``: the cloze formulation with a hidden ``I don't know`` completion
+  scored after the options, eval-framework's ``IdkStyle``.
 
 Items are written by hand in a curation sheet and converted with
 ``scripts/nonexistent_entities_mcq/sheet_to_jsonl.py``; see the plugin README.
 """
 
 from eval_framework.tasks.registry import Registry, register_task
-from eval_framework.tasks.task_style import MCStyle
+from eval_framework.tasks.task_style import ClozeStyle, MCStyle
 
 from abstention_over_training_evals.plugins.base import LocalJsonlMcqTask, MCStyleWithShownAbstention
 
@@ -50,7 +56,26 @@ class NonexistentEntitiesMCQIdk(LocalJsonlMcqTask):
     ABSTENTION_OPTION = IDK_OPTION
 
 
+class NonexistentEntitiesMCQCloze(LocalJsonlMcqTask):
+    """The same items in cloze form: only the question is shown and each option's text is scored."""
+
+    NAME = "NonexistentEntitiesMCQCloze"
+    PROMPTS_FILENAME = _ITEMS_FILENAME
+    TASK_STYLER = ClozeStyle()
+
+
+class NonexistentEntitiesMCQClozeIdk(LocalJsonlMcqTask):
+    """Cloze form with a hidden ``I don't know`` completion scored after the options."""
+
+    NAME = "NonexistentEntitiesMCQClozeIdk"
+    PROMPTS_FILENAME = _ITEMS_FILENAME
+    TASK_STYLER = ClozeStyle().with_abstention_option(f" {IDK_OPTION}")
+    SCORED_ABSTENTION = IDK_OPTION
+
+
 def register_tasks(registry: Registry) -> None:
     """Register this module's tasks with an eval-framework registry."""
     register_task(NonexistentEntitiesMCQ, registry=registry)
     register_task(NonexistentEntitiesMCQIdk, registry=registry)
+    register_task(NonexistentEntitiesMCQCloze, registry=registry)
+    register_task(NonexistentEntitiesMCQClozeIdk, registry=registry)
