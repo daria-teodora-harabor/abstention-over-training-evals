@@ -178,9 +178,17 @@ def main(argv: list[str] | None = None) -> int:
                 if not hasattr(llm, "model"):
                     raise RuntimeError("the model was freed before this task ran")
                 results = run_eval(llm, config)
-                errored = sum(1 for r in results if getattr(r, "error", None) is not None)
+                # The prefix bits-per-byte side metrics cannot be estimated on a one-letter answer and
+                # record a NotEstimable error per sample; any other error means the run is not usable.
+                errored = sorted(
+                    {
+                        f"{r.metric_name}: {r.error.error_class}"
+                        for r in results
+                        if getattr(r, "error", None) is not None and r.error.error_class != "NotEstimable"
+                    }
+                )
                 if errored:
-                    raise RuntimeError(f"{errored} of {len(results)} metric results carry an error")
+                    raise RuntimeError(f"metric results carry errors: {', '.join(errored)}")
                 record.update(status="ok", seconds=round(time.time() - t1, 1), results=len(results))
                 print(f"[{label}] {task}: ok in {record['seconds']}s ({len(results)} metric results)")
             except Exception as exc:  # keep the sweep going; the record says what failed
