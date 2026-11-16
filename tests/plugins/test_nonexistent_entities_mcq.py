@@ -302,3 +302,19 @@ def test_register_tasks_registers_all_four_variants():
     register_tasks(registry)
     for name in ("MCQ", "MCQIdk", "MCQCloze", "MCQClozeIdk"):
         assert f"NonexistentEntities{name}" in registry
+
+
+def test_num_samples_cap_keeps_whole_items(items_file):
+    samples = list(_task(NonexistentEntitiesMCQIdk).iterate_samples(7))
+    # The cap is per subject and is rounded up to one whole item: 120 main + 120 control samples.
+    assert len(samples) == 2 * ORDERS_IDK
+    assert all(s.id < ORDERS_IDK for s in samples)
+
+
+def test_fewshot_examples_never_show_the_item_itself(items_file):
+    task = NonexistentEntitiesMCQIdk.with_overwrite(num_fewshot=1, custom_subjects=None, custom_hf_revision=None)
+    for sample in task.iterate_samples():
+        prompt = sample.messages[0].content
+        for item in ITEMS:
+            if item["question"] in prompt:
+                assert prompt.count(item["question"]) == 1, "an item was its own few-shot example"

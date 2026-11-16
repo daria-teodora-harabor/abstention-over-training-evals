@@ -70,8 +70,8 @@ item) or `"fixed"`.
 The cloze tasks show no options, so there is nothing to reorder; the hidden abstention is last in the
 scored list only, which the model never sees.
 
-`--num-samples` on the CLI counts samples, not items: for the lettered tasks it cuts at a multiple of
-the order count to keep whole items.
+`--num-samples` on the CLI counts samples per subject, not items; the task rounds it up to a multiple
+of the order count so a cap never cuts an item's orders short.
 
 ## Item file
 

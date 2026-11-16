@@ -270,7 +270,25 @@ class LocalJsonlMcqTask(BaseTask[str]):
 
     def iterate_samples(self, num_samples: int | None = None) -> Iterable[Sample]:
         self.SUBJECTS = self._present_subjects()
+        if num_samples is not None:
+            # Keep whole items: a cap that stops mid-item would break the letter balance for that item.
+            per_item = len(
+                self.option_orders(
+                    max(len(item.distractors) for item in self._items())
+                    + 1
+                    + (type(self).ABSTENTION_OPTION is not None)
+                )
+            )
+            num_samples = -(-num_samples // per_item) * per_item
         yield from super().iterate_samples(num_samples)
+
+    def _sample_fewshot_examples(self, item: dict[str, Any]) -> list[dict[str, Any]]:
+        # The framework excludes only an example equal to the item; a reordered copy of the item is
+        # not equal to its base-order row, so exclude by item id instead.
+        assert self.rnd is not None
+        pool = [example for example in self.dataset[self.FEWSHOT_SPLIT] if example["id"] != item["id"]]
+        # A subject with fewer other items than requested (e.g. a lone control) gets what there is.
+        return self.rnd.sample(pool, min(self.num_fewshot, len(pool)))
 
     def _load_dataset(self, subject: str) -> None:
         rows = []
