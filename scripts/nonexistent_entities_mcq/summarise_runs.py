@@ -9,7 +9,10 @@ log-likelihoods). The latter is joined with the task's sample manifest (which it
 sample is) to report, per checkpoint, task and subject:
 
 - the framework's metrics averaged over all samples, i.e. over all option orders (raw and Bayesian,
-  length-corrected, accuracy; DCS and Ternary on the IDK tasks);
+  length-corrected, accuracy; DCS and Ternary on the IDK tasks). The framework's DCS divides each
+  log-likelihood by the completion's length before the softmax (a temperature-2 softmax on the
+  one-letter completions), so an untempered DCS from the raw log-likelihoods is reported alongside
+  (``dcs_raw``: (p_gold - p_wrong) x (1 - p_abstain), Burns 2025), with the mean probability on the gold;
 - accuracy under order 0 only: the fixed order, what a single-order run would have reported;
 - abstention rate: how often the argmax completion is "I don't know";
 - consistency: the share of items whose chosen option (by content) is the same under every order;
@@ -23,6 +26,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import sys
 from collections import Counter, defaultdict
 from pathlib import Path
@@ -55,6 +59,13 @@ def _mean(values: list[float]) -> float | None:
     return sum(values) / len(values) if values else None
 
 
+def _softmax(loglikelihoods: dict[str, float]) -> dict[str, float]:
+    top = max(loglikelihoods.values())
+    weights = {k: math.exp(v - top) for k, v in loglikelihoods.items()}
+    total = sum(weights.values())
+    return {k: w / total for k, w in weights.items()}
+
+
 def summarise_run(
     task_name: str,
     responses: list[dict[str, Any]],
@@ -77,6 +88,8 @@ def summarise_run(
         correct: list[float] = []
         correct_order0: list[float] = []
         abstained: list[float] = []
+        dcs_raw: list[float] = []
+        p_gold: list[float] = []
         letters: Counter[str] = Counter()
         chosen_by_item: dict[str, list[str]] = defaultdict(list)
         errors = 0
@@ -99,6 +112,12 @@ def summarise_run(
             if row["order"] == 0:
                 correct_order0.append(is_correct)
             abstained.append(float(row["abstention"] is not None and chosen == row["abstention"]))
+            probs = _softmax(loglikelihoods)
+            p_c = probs.get(row["gold"], 0.0)
+            p_idk = probs.get(row["abstention"], 0.0) if row["abstention"] is not None else 0.0
+            p_w = 1.0 - p_c - p_idk
+            dcs_raw.append((p_c - p_w) * (1.0 - p_idk))
+            p_gold.append(p_c)
             if lettered:
                 letters[chosen.strip()] += 1
                 content = row["choices"][LETTERS.index(chosen.strip())]
@@ -114,6 +133,8 @@ def summarise_run(
             "accuracy_all_orders": _mean(correct),
             "accuracy_order_0": _mean(correct_order0),
             "abstention_rate": _mean(abstained),
+            "dcs_raw": _mean(dcs_raw),
+            "p_gold": _mean(p_gold),
             # One order only for the cloze tasks, so consistency across orders is undefined there.
             "consistency": _mean([float(len(set(c)) == 1) for c in chosen_by_item.values()]) if lettered else None,
             "letter_preference": {k: round(v / n_letters, 3) for k, v in sorted(letters.items())} if n_letters else {},
@@ -166,9 +187,9 @@ def to_markdown(summary: dict[str, Any]) -> str:
             lines.append(f"### {task_name} ({subject})\n")
             lines.append(
                 "| checkpoint | items | errors | acc (all orders) | acc (order 0) | Bayesian acc | abstain | "
-                "consistency | DCS | Ternary | letter preference |"
+                "p(gold) | consistency | DCS raw | DCS (fw) | Ternary | letter preference |"
             )
-            lines.append("|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|")
+            lines.append("|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|")
             for checkpoint, stats in by_checkpoint.items():
                 s = stats.get(subject)
                 if not s:
@@ -178,8 +199,9 @@ def to_markdown(summary: dict[str, Any]) -> str:
                 lines.append(
                     f"| {checkpoint} | {s.get('n_items', '–')} | {s.get('errors', '–')} | {_fmt(s.get('accuracy_all_orders'))} | "
                     f"{_fmt(s.get('accuracy_order_0'))} | {_fmt(m.get('Accuracy Bayesian Loglikelihood'))} | "
-                    f"{_fmt(s.get('abstention_rate'))} | {_fmt(s.get('consistency'))} | "
-                    f"{_fmt(m.get('Distributional Correctness Score'))} | {_fmt(m.get('Ternary Score'))} | {pref} |"
+                    f"{_fmt(s.get('abstention_rate'))} | {_fmt(s.get('p_gold'))} | {_fmt(s.get('consistency'))} | "
+                    f"{_fmt(s.get('dcs_raw'))} | {_fmt(m.get('Distributional Correctness Score'))} | "
+                    f"{_fmt(m.get('Ternary Score'))} | {pref} |"
                 )
             lines.append("")
     return "\n".join(lines)

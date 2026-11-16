@@ -93,11 +93,19 @@ def test_always_picking_the_gold_is_consistent_and_order_free(items_file):
     stats = script.summarise_run(
         "NonexistentEntitiesMCQIdk", _responses(manifest, lambda row: row["gold"]), [], manifest
     )
+    import math
+
+    e1, e5 = math.exp(-1.0), math.exp(-5.0)
+    p_c = e1 / (e1 + 4 * e5)
+    p_idk = e5 / (e1 + 4 * e5)
+    p_w = 1 - p_c - p_idk
     for subject in ("main", "control"):
         assert stats[subject]["accuracy_all_orders"] == 1.0
         assert stats[subject]["accuracy_order_0"] == 1.0
         assert stats[subject]["abstention_rate"] == 0.0
         assert stats[subject]["consistency"] == 1.0
+        assert stats[subject]["p_gold"] == pytest.approx(p_c)
+        assert stats[subject]["dcs_raw"] == pytest.approx((p_c - p_w) * (1 - p_idk))
     # Across an item's 120 orders the gold sits under every letter equally often.
     assert stats["main"]["letter_preference"] == {k: pytest.approx(0.2) for k in "ABCDE"}
 
@@ -118,7 +126,9 @@ def test_framework_metric_rows_are_averaged_per_subject(items_file):
     assert stats["control"]["metrics"] == {"Ternary Score": -1.0}
     markdown = script.to_markdown({"NonexistentEntitiesMCQIdk": {"allenai_Olmo-3-1125-32B@main": stats}})
     assert "### NonexistentEntitiesMCQIdk (main)" in markdown
-    assert "| allenai_Olmo-3-1125-32B@main | 2 | 0 | 1.00 | 1.00 | – | 0.00 | 1.00 | – | 0.50 |" in markdown
+    assert (
+        "| allenai_Olmo-3-1125-32B@main | 2 | 0 | 1.00 | 1.00 | – | 0.00 | 0.93 | 1.00 | 0.87 | – | 0.50 |" in markdown
+    )
 
 
 def test_a_changed_item_file_is_detected(items_file):
