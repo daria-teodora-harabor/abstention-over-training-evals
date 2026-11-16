@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run the NonexistentEntitiesMCQ tasks on a list of Olmo 3 32B checkpoints, one download per checkpoint.
+r"""Run the NonexistentEntitiesMCQ tasks on a list of Olmo 3 32B checkpoints, one download per checkpoint.
 
 On the GPU machine, after ``scripts/nonexistent_entities_mcq/pod_setup.sh``::
 
