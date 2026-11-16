@@ -9,10 +9,12 @@ On the GPU machine, after ``scripts/nonexistent_entities_mcq/pod_setup.sh``::
         --tasks NonexistentEntitiesMCQ NonexistentEntitiesMCQIdk
 
 Each checkpoint is downloaded once (about 65 GB), loaded once, scored on every requested task, then its
-weights are deleted (``--keep-weights`` keeps them). Every run is appended to ``<output-dir>/runs.jsonl``
-with its timing and output directory; rerunning with the same arguments skips the (checkpoint, task)
-pairs already recorded as ``ok``, so an interrupted sweep resumes. ``--dry-run`` prints the plan only
-and needs no GPU stack.
+weights are deleted (``--keep-weights`` keeps them; they are also kept when any of its tasks failed, so
+a retry does not download again). Every run is appended to ``<output-dir>/runs.jsonl`` with its timing
+and output directory; a run counts as ``ok`` only when every sample scored without error (the
+framework is told to fail on the first error rather than store error rows). Rerunning with the same
+arguments skips the (checkpoint, task) pairs already recorded as ``ok``, so an interrupted sweep
+resumes. ``--dry-run`` prints the plan only and needs no GPU stack.
 """
 
 from __future__ import annotations
@@ -117,14 +119,36 @@ def main(argv: list[str] | None = None) -> int:
             continue
         label = checkpoint_label(checkpoint)
         t0 = time.time()
-        llm = OlmoHFCheckpoint(
-            checkpoint,
-            weights_dir=str(args.weights_dir) if args.weights_dir else None,
-            fast_letters=not args.no_fast_letters,
-            letter_batch_size=args.letter_batch_size,
-        )
+        try:
+            llm = OlmoHFCheckpoint(
+                checkpoint,
+                weights_dir=str(args.weights_dir) if args.weights_dir else None,
+                fast_letters=not args.no_fast_letters,
+                letter_batch_size=args.letter_batch_size,
+            )
+        except Exception as exc:  # a download or load failure must not end the sweep
+            failures += 1
+            message = f"{type(exc).__name__}: {exc}"
+            print(f"[{label}] FAILED to download or load: {message}")
+            traceback.print_exc()
+            for task in tasks:
+                append_record(
+                    runs_file,
+                    {
+                        "checkpoint": label,
+                        "model_id": checkpoint.model_id,
+                        "revision": checkpoint.revision,
+                        "stage": checkpoint.stage.value,
+                        "task": task,
+                        "status": "error",
+                        "seconds": round(time.time() - t0, 1),
+                        "error": f"download/load: {message}",
+                    },
+                )
+            continue
         load_seconds = time.time() - t0
         print(f"[{label}] downloaded and loaded in {load_seconds:.0f}s")
+        checkpoint_ok = True
         for task in tasks:
             config = EvalConfig(
                 llm_class=OlmoHFCheckpoint,
@@ -135,6 +159,7 @@ def main(argv: list[str] | None = None) -> int:
                 output_dir=args.output_dir / label,
                 batch_size=args.batch_size if args.no_fast_letters else max(args.batch_size, args.letter_batch_size),
                 wandb_upload_results=False,
+                fail_on_error=True,
                 description=f"{label} on {task}",
             )
             record: dict[str, Any] = {
@@ -148,20 +173,29 @@ def main(argv: list[str] | None = None) -> int:
             }
             t1 = time.time()
             try:
-                run_eval(llm, config)
-                record.update(status="ok", seconds=round(time.time() - t1, 1))
-                print(f"[{label}] {task}: ok in {record['seconds']}s")
+                if not hasattr(llm, "model"):
+                    raise RuntimeError("the model was freed before this task ran")
+                results = run_eval(llm, config)
+                errored = sum(1 for r in results if getattr(r, "error", None) is not None)
+                if errored:
+                    raise RuntimeError(f"{errored} of {len(results)} metric results carry an error")
+                record.update(status="ok", seconds=round(time.time() - t1, 1), results=len(results))
+                print(f"[{label}] {task}: ok in {record['seconds']}s ({len(results)} metric results)")
             except Exception as exc:  # keep the sweep going; the record says what failed
                 failures += 1
+                checkpoint_ok = False
                 record.update(status="error", seconds=round(time.time() - t1, 1), error=f"{type(exc).__name__}: {exc}")
                 print(f"[{label}] {task}: FAILED {record['error']}")
                 traceback.print_exc()
             append_record(runs_file, record)
+        llm.release()
         del llm
         gc.collect()
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
-        if not args.keep_weights:
+        if args.keep_weights or not checkpoint_ok:
+            print(f"[{label}] weights kept at {weights_root(args.weights_dir)}")
+        else:
             remove_weights(checkpoint, args.weights_dir)
             print(f"[{label}] weights removed")
     return 1 if failures else 0

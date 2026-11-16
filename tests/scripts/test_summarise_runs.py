@@ -118,7 +118,7 @@ def test_framework_metric_rows_are_averaged_per_subject(items_file):
     assert stats["control"]["metrics"] == {"Ternary Score": -1.0}
     markdown = script.to_markdown({"NonexistentEntitiesMCQIdk": {"allenai_Olmo-3-1125-32B@main": stats}})
     assert "### NonexistentEntitiesMCQIdk (main)" in markdown
-    assert "| allenai_Olmo-3-1125-32B@main | 2 | 1.00 | 1.00 | – | 0.00 | 1.00 | – | 0.50 |" in markdown
+    assert "| allenai_Olmo-3-1125-32B@main | 2 | 0 | 1.00 | 1.00 | – | 0.00 | 1.00 | – | 0.50 |" in markdown
 
 
 def test_a_changed_item_file_is_detected(items_file):
@@ -127,4 +127,12 @@ def test_a_changed_item_file_is_detected(items_file):
     responses = _responses(manifest, lambda row: row["gold"])
     responses[0]["prompt"] = "Question: something else\n"
     with pytest.raises(ValueError, match="does not match the manifest"):
+        script.summarise_run("NonexistentEntitiesMCQIdk", responses, [], manifest)
+
+
+def test_missing_responses_are_an_error(items_file):
+    script = _load_script()
+    manifest = script._manifest("NonexistentEntitiesMCQIdk")
+    responses = _responses(manifest, lambda row: row["gold"])[:-1]
+    with pytest.raises(ValueError, match="responses in output.jsonl"):
         script.summarise_run("NonexistentEntitiesMCQIdk", responses, [], manifest)
