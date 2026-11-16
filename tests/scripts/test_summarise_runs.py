@@ -147,3 +147,16 @@ def test_missing_responses_are_an_error(items_file):
     responses = _responses(manifest, lambda row: row["gold"])[:-1]
     with pytest.raises(ValueError, match="responses in output.jsonl"):
         script.summarise_run("NonexistentEntitiesMCQIdk", responses, [], manifest)
+
+
+def test_bootstrap_intervals_bracket_the_mean(items_file):
+    script = _load_script()
+    manifest = script._manifest("NonexistentEntitiesMCQIdk")
+    stats = script.summarise_run("NonexistentEntitiesMCQIdk", _responses(manifest, lambda row: " A"), [], manifest)
+    main = stats["main"]
+    lo, hi = main["accuracy_ci95"]
+    assert 0.0 <= lo <= main["accuracy_all_orders"] <= hi <= 1.0
+    assert set(main["item_accuracy"]) == {"pharma-01", "pharma-02"}
+    assert all(v == pytest.approx(0.2) for v in main["item_accuracy"].values())
+    # Two identical items: every resample has the same mean, so the interval collapses on it.
+    assert lo == pytest.approx(0.2) and hi == pytest.approx(0.2)
