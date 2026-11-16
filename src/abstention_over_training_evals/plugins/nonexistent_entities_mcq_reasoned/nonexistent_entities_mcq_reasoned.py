@@ -46,6 +46,7 @@ _EXPLICIT_RE = re.compile(
     r"(?:answer|best option|correct option|best choice|correct choice|right answer)\**\s*(?:is|:|would be|should be)?"
     r"\s*\**\s*\(?(?-i:([A-E]))\)?(?![A-Za-z])"
     r"|option\s+\**(?-i:([A-E]))\**\s+(?:is|as|,)?\s*(?:the\s+)?(?:best|correct|most|right)"
+    r"|option\s+\**(?-i:([A-E]))\**\s*(?:\([^)]*\))?\s*\**\s*:\s*(?:this\s+is\s+)?(?:the\s+)?(?:correct|best|right)"
     r"|\*\*(?-i:([A-E]))\s+is\s+the\s+(?:best|correct|right)",
     re.IGNORECASE,
 )
@@ -66,8 +67,12 @@ def parse_letter(answer: str | None) -> str | None:
     explicit = _EXPLICIT_RE.search(answer)
     if explicit:
         return _first_group(explicit)
-    leading = _LEADING_RE.search(answer)
-    return _first_group(leading) if leading else None
+    leading = [_first_group(m) for m in _LEADING_RE.finditer(answer)]
+    if not leading:
+        return None
+    # Three or more different letters opening lines is an option list being restated, not an
+    # answer: better no letter than the first bullet.
+    return leading[0] if len(set(leading)) < 3 else None
 
 
 class McqReasonedContext(BaseMetricContext):
