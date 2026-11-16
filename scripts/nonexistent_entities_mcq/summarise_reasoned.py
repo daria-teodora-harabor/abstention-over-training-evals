@@ -85,6 +85,7 @@ def summarise_run(records: list[dict[str, Any]], immediate_items: dict[str, floa
         trace_correct: list[float] = []
         trace_wrong: list[float] = []
         by_item: dict[str, list[float]] = defaultdict(list)
+        abst_by_item: dict[str, list[float]] = defaultdict(list)
         letters: dict[str, int] = defaultdict(int)
         for r in rows:
             if r.get("error"):
@@ -101,6 +102,7 @@ def summarise_run(records: list[dict[str, Any]], immediate_items: dict[str, floa
             unparseable.append(float(letter is None))
             truncated.append(float(r.get("raw_completion_finish_reason") == "length"))
             by_item[ctx.get("item_id", f"?{r['id']}")].append(ok)
+            abst_by_item[ctx.get("item_id", f"?{r['id']}")].append(abstained[-1])
             if letter:
                 letters[letter] += 1
             # vLLM reports no reasoning-token count (0); the total generated count is a close proxy
@@ -118,6 +120,7 @@ def summarise_run(records: list[dict[str, Any]], immediate_items: dict[str, floa
                 trace = max(0.0, float(n_tok) - len(r.get("completion") or "") / 4)
                 (trace_correct if ok else trace_wrong).append(trace)
         item_acc = {k: sum(v) / len(v) for k, v in sorted(by_item.items())}
+        item_abst = {k: sum(v) / len(v) for k, v in sorted(abst_by_item.items())}
         stats: dict[str, Any] = {
             "n_answers": len(rows),
             "n_items": len(item_acc),
@@ -125,6 +128,7 @@ def summarise_run(records: list[dict[str, Any]], immediate_items: dict[str, floa
             "accuracy": _mean(correct),
             "accuracy_ci95": _bootstrap(item_acc),
             "abstention_rate": _mean(abstained),
+            "abstention_ci95": _bootstrap(item_abst),
             "unparseable_rate": _mean(unparseable),
             "truncated_rate": _mean(truncated),
             "letter_preference": {k: round(v / max(1, sum(letters.values())), 3) for k, v in sorted(letters.items())},
@@ -141,6 +145,7 @@ def summarise_run(records: list[dict[str, Any]], immediate_items: dict[str, floa
             # can be told apart (early checkpoints explain at length after answering).
             "answer_chars_median": statistics.median(answer_chars) if answer_chars else None,
             "item_accuracy": item_acc,
+            "item_abstention": item_abst,
         }
         if immediate_items:
             shared = [k for k in item_acc if k in immediate_items]
