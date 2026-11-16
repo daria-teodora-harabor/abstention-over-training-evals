@@ -76,7 +76,7 @@ def style(ax: plt.Axes) -> None:
 
 
 def _series(summary: dict, task: str, subject: str, key: str) -> tuple[list[int], list[float], list[list[float]]]:
-    """x positions, values and asymmetric error-bar lengths (lower, upper) for one series."""
+    """X positions, values and asymmetric error-bar lengths (lower, upper) for one series."""
     xs, ys, lo, hi = [], [], [], []
     for i, (label, _) in enumerate(ORDER):
         stats = summary.get(task, {}).get(label, {}).get(subject, {})

@@ -77,6 +77,7 @@ def summarise_run(records: list[dict[str, Any]], immediate_items: dict[str, floa
         by_subject[r["subject"]].append(r)
     for subject, rows in by_subject.items():
         correct, abstained, unparseable, errors = [], [], [], 0
+        truncated: list[float] = []
         tokens: list[float] = []
         tokens_correct: list[float] = []
         tokens_wrong: list[float] = []
@@ -89,15 +90,20 @@ def summarise_run(records: list[dict[str, Any]], immediate_items: dict[str, floa
             ctx = r.get("context") or {}
             letter = parse_letter(r.get("completion"))
             gold = r.get("ground_truth")
+            if r.get("raw_completion_finish_reason") == "length":
+                letter = None  # a trace cut at the cap never reached an answer
             ok = float(letter is not None and letter == gold)
             correct.append(ok)
             abstained.append(float(letter is not None and letter == ctx.get("abstention_letter")))
             unparseable.append(float(letter is None))
+            truncated.append(float(r.get("raw_completion_finish_reason") == "length"))
             by_item[ctx.get("item_id", f"?{r['id']}")].append(ok)
             if letter:
                 letters[letter] += 1
-            n_tok = r.get("raw_completion_reasoning_num_tokens")
-            if n_tok is None and r.get("raw_completion_reasoning"):
+            # vLLM reports no reasoning-token count (0); the total generated count is a close proxy
+            # since the answer after the trace is a few tokens.
+            n_tok = r.get("raw_completion_reasoning_num_tokens") or r.get("raw_completion_num_tokens")
+            if not n_tok and r.get("raw_completion_reasoning"):
                 n_tok = len(r["raw_completion_reasoning"]) / 4  # rough fallback: 4 chars per token
             if n_tok is not None:
                 tokens.append(float(n_tok))
@@ -111,6 +117,7 @@ def summarise_run(records: list[dict[str, Any]], immediate_items: dict[str, floa
             "accuracy_ci95": _bootstrap(item_acc),
             "abstention_rate": _mean(abstained),
             "unparseable_rate": _mean(unparseable),
+            "truncated_rate": _mean(truncated),
             "letter_preference": {k: round(v / max(1, sum(letters.values())), 3) for k, v in sorted(letters.items())},
             "reasoning_tokens_median": statistics.median(tokens) if tokens else None,
             "reasoning_tokens_mean": _mean(tokens),
