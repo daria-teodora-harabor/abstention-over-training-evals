@@ -19,7 +19,7 @@ drawn from the summaries.
 - **Reasoned answers** (`reasoned_summary.json`, `reasoned_summary.md`): the two tasks in
   `plugins/nonexistent_entities_mcq_reasoned/` on the 6 post-training checkpoints, served with vLLM and
   the `olmo3` reasoning parser on H200 pods, temperature 0.6, top-p 0.95, 16,384-token cap, one answer
-  per item and option order (21,600 answers). An answer without a parseable letter counts as wrong.
+  per item and option order (43,200 answers: 1,200 plain and 6,000 with "I don't know" per checkpoint). An answer without a parseable letter counts as wrong.
   Driver: `run_reasoned_pod.sh`; summariser: `summarise_reasoned.py`.
 - **Intervals**: 95% bootstrap over items (2,000 resamples of the items with replacement, seed 0),
   each item's value being its mean over option orders. Chance accuracy is 0.25 (0.20 with "I don't know").
