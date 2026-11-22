@@ -15,13 +15,13 @@ Setup common to all figures. Model: `allenai/Olmo-3-32B-Think` served with vLLM 
 **Shared setup.** Each checkpoint answers the 100 self-harm prompts in `data/local/selfharm_weirdchat.jsonl`, 5 samples per prompt, with temperature 0.6, top-p 0.95 and vLLM 0.30.0.
 
 - **Post-training checkpoints** (SFT-5k, SFT-final, DPO, RL-100, RL-400, Think) get the prompt as a single chat turn. Their own chat template applies, which adds the default system message "You are a helpful AI assistant." Reasoning is separated with `--reasoning-parser olmo3`, and responses are capped at 32,768 tokens.
-- **Pre-training checkpoints** (S1-136k to S1-656k, S2-final, S3-base) run the `SelfHarmWeirdChatBase` task. They are served with #7's plain `User:`/`Assistant:` transcript template and see three parts before the prompt:
+- **Pre-training checkpoints** (S1-136k to S1-656k, S2-final, S3-base) run the `SelfHarmWeirdChatBase` task, served with the plugin's plain transcript template. They see:
   - a one-line framing, "The following is a conversation between a user and a helpful AI assistant.";
-  - #7's three human-written, topic-neutral example exchanges;
-  - the prompt itself.
+  - three topic-neutral example exchanges from `data/local/selfharm_weirdchat_demos.jsonl` (keeping basil fresh, weather vs. climate, a bakery name);
+  - the prompt.
 
-  Generation stops at the next `User:` turn or at 1,024 tokens.
-- **Grading.** Every response is graded by `google/gemma-4-31b-it` (temperature 0) with the repo's default `LlmSafetyJudge` rubric. The grader reads the answer, plus the reasoning trace when there is one. All 7,000 responses received a verdict. Pre-training responses hit the token cap 4–9 times per checkpoint, out of 500.
+  Generation stops at the next `User:` turn or at 2,048 tokens.
+- **Grading.** Every response is graded by `google/gemma-4-31b-it` (temperature 0) with the repo's default `LlmSafetyJudge` rubric. The grader reads the answer, plus the reasoning trace when there is one. All 7,000 responses received a verdict. Pre-training responses hit the token cap 3–23 times per checkpoint, out of 500.
 
 **Checkpoints.**
 
@@ -40,15 +40,9 @@ SFT-5k pools two checkpoints because `main` of the SFT repo is an equal-weight m
 
 **Figure 5 (`fig5_checkpoint_unsafe_rate`).**
 - **What it shows.** The fraction of responses judged unsafe, for each checkpoint in training order. Error bars are 95% bootstrap intervals that resample whole prompts (10,000 resamples). The dashed line marks the change of prompting format; the two sides are not directly comparable.
-- **Pre-training.** Rates are 0.40–0.55 and drift slightly lower after stage 1.
+- **Pre-training.** Rates are 0.46–0.56, roughly flat.
 - **Post-training.** The rate is 0.37 at SFT-5k, then 0.78 at SFT-final. It stays at 0.73–0.77 through DPO and RL.
 - **Agreement with the earlier experiment.** Think's 0.73 matches the earlier 5-rerun measurement on these prompts (0.74).
+- **Per-prompt agreement with Think.** Spearman over prompts is 0.14–0.35 for the pre-training checkpoints and 0.61–0.78 from SFT-final on (`checkpoint_summary.json`).
 
 **Figure 6 (`fig6_checkpoint_unsafe_rate_by_behavior`).** The same unsafe rate split by self-harm behavior; $n$ is the number of prompts per behavior, and lines break at the change of prompting format. With 10–15 prompts in the smaller behaviors, single-checkpoint differences of about 0.1 are within noise.
-
-**Figure 7 (`fig7_base_predictors_of_think`).**
-- **What it shows.** For each pre-training checkpoint, how well two measures rank the 100 prompts the same way as Think's per-prompt unsafe rate: Spearman $\rho$, with 95% bootstrap intervals over prompts.
-  - *Generation unsafe rate* is the checkpoint's own judged unsafe rate per prompt, from Figure 5.
-  - *Cloze compliance margin* is the PMI margin of #8 with its sign flipped. It is computed after the same few-shot transcript ending in `Assistant:`, using #8's three human-written refusal and three compliance openers. It is mean log-likelihood of the compliance openers minus mean log-likelihood of the refusal openers, minus the same quantity after an empty user turn.
-- **Generation.** It predicts weakly. $\rho$ is 0.28–0.31 in early stage 1, and 0.13–0.22 later.
-- **Cloze margin.** It does not predict; every interval includes 0. Its average does rise toward refusal at stage 2 (the mean PMI margin goes from −2.7 to +1.2–1.3), which matches #8's finding that refusal mass appears in mid-training.

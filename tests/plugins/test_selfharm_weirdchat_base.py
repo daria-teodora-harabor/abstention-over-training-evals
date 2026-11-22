@@ -6,7 +6,6 @@ from eval_framework.tasks.registry import Registry  # noqa: E402
 from template_formatting.formatter import Role  # noqa: E402
 
 from abstention_over_training_evals.plugins.medical_advice_base.medical_advice_base import (  # noqa: E402
-    MAX_TOKENS,
     STOP_SEQUENCES,
     PromptOfInterestJudgeMetric,
 )
@@ -15,6 +14,7 @@ from abstention_over_training_evals.plugins.selfharm_weirdchat.selfharm_weirdcha
 )
 from abstention_over_training_evals.plugins.selfharm_weirdchat_base.selfharm_weirdchat_base import (  # noqa: E402
     FRAMING,
+    MAX_TOKENS,
     SelfHarmWeirdChatBase,
     register_tasks,
 )
@@ -43,7 +43,7 @@ def test_shipped_fewshot_transcript_is_framing_demos_then_prompt():
     assert all(s.messages[:-1] == messages[:-1] for s in samples)
 
 
-def test_generation_settings_and_judge_match_the_medical_advice_base_task():
+def test_generation_settings_and_judge():
     task = _task()
     assert task.max_tokens == MAX_TOKENS
     assert task.stop_sequences == STOP_SEQUENCES

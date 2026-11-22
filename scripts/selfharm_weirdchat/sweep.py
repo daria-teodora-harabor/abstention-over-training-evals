@@ -24,8 +24,11 @@ from abstention_over_training_evals.adapters.olmo_settings import (
     OLMO3_THINK_TEMPERATURE,
     OLMO3_THINK_TOP_P,
 )
-from abstention_over_training_evals.plugins.medical_advice_base.medical_advice_base import MAX_TOKENS, STOP_SEQUENCES
-from abstention_over_training_evals.plugins.selfharm_weirdchat_base.selfharm_weirdchat_base import SelfHarmWeirdChatBase
+from abstention_over_training_evals.plugins.medical_advice_base.medical_advice_base import STOP_SEQUENCES
+from abstention_over_training_evals.plugins.selfharm_weirdchat_base.selfharm_weirdchat_base import (
+    MAX_TOKENS,
+    SelfHarmWeirdChatBase,
+)
 
 PROMPTS = Path(__file__).parents[2] / "data/local/selfharm_weirdchat.jsonl"
 
