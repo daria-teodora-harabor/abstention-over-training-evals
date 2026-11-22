@@ -164,4 +164,6 @@ checkpoint, including the download, and run all four tasks whenever a checkpoint
 
 The 50 items (45 fake, 5 controls, 10 per category) are in `data/local/nonexistent_entities_mcq.jsonl`,
 converted from the curation sheet on 15 November 2026. Option permutations, the in-process checkpoint
-adapter and the sweep runner were added on 15 November 2026; runs on the checkpoints are pending.
+adapter and the sweep runner were added on 15 November 2026. The sweep over 13 Olmo 3 32B checkpoints
+and the reasoned runs on the post-training checkpoints (`../nonexistent_entities_mcq_reasoned/`) ran on
+15–16 November 2026; their summaries and figures are in `scripts/nonexistent_entities_mcq/results/`.
